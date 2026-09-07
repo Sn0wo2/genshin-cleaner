@@ -1,8 +1,11 @@
 {
-  "name": "genshin_cleaner",
+  "name": "genshin-cleaner",
   "version": "0.0.0",
   "packageManager": "bun@1.4.0",
-  "keywords": ["genshin", "cleaner"],
+  "keywords": [
+    "genshin",
+    "cleaner"
+  ],
   "type": "module",
   "dependencies": {
     "bytes": "^3.1.2",
@@ -12,7 +15,12 @@
     "ini": "^7.0.0",
     "prompts": "^2.4.2"
   },
+  "devDependencies": {
+    "@types/bytes": "^3.1.6",
+    "@types/node": "^26.4.1",
+    "@types/prompts": "^2.4.9"
+  },
   "scripts": {
-    "build": "bun build --compile clean-genshin.ts --outfile clean-genshin.exe"
+    "build": "bun build --compile --minify --no-compile-autoload-dotenv --no-compile-autoload-bunfig genshin-cleaner.ts --outfile dist/genshin-cleaner"
   }
 }
