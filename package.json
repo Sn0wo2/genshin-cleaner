@@ -1,11 +1,12 @@
 {
   "name": "genshin-cleaner",
-  "version": "0.0.0",
-  "packageManager": "bun@1.4.0",
+  "description": "Cleans up removable Genshin Impact resources(~43GB with CNRELWin7.0.0_R47805902_S47829085_D47985349) without triggering a full integrity check",
   "keywords": [
     "genshin",
     "cleaner"
   ],
+  "version": "0.0.0",
+  "packageManager": "bun@1.4.0",
   "type": "module",
   "dependencies": {
     "bytes": "^3.1.2",
