@@ -7,18 +7,17 @@
 > [!TIP]
 > The launcher may restore some files after an update. If that happens, run `genshin-cleaner` again
 
-![Preview Screenshot](assets/preview_screenshot.png)
-
 ## Usage
 
 ```shell
-clean-genshin
+genshin-cleaner                          # dry-run if one install found, else list installs
+genshin-cleaner --dry-run                # dry-run without a path (if one install is found)
+genshin-cleaner "D:\Games\Genshin Impact"                # dry-run: JSON with dryRun flag + rules
+genshin-cleaner "D:\Games\Genshin Impact" --dry-run      # same as above, explicit
+genshin-cleaner "D:\Games\Genshin Impact" --delete       # actually delete
+genshin-cleaner "D:\Games\Genshin Impact" --delete --editor
+genshin-cleaner "D:\Games\Genshin Impact" --delete --dry-run  # safety: dry-run, never delete
+genshin-cleaner "D:\Games\Genshin Impact" --debug             # pretty-print (indented) JSON output
 
-clean-genshin "D:\Games\Genshin Impact"
-
-clean-genshin "D:\Games\Genshin Impact" --yes
-
-clean-genshin --editor
-
-clean-genshin --help
+genshin-cleaner --help
 ```
