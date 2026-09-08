@@ -157,10 +157,6 @@ func main() {
 	}
 	games = result
 
-	if path == "" && len(games) == 0 {
-		stdjson.New(stdjson.StageError, "Genshin not found, pass the game dir (or its parent)").Write()
-		os.Exit(1)
-	}
 	if path == "" && len(games) > 1 {
 		if deleteMode {
 			stdjson.New(stdjson.StageError, "no game dir given, pass one game dir").WithData(games).Write()

@@ -156,9 +156,7 @@ func scanFiles(cwd string, match func(rel string) bool) ([]target, error) {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() {
-			targets = append(targets, target{Path: path, Size: info.Size()})
-		}
+		targets = append(targets, target{Path: path, Size: info.Size()})
 		return nil
 	})
 	if err != nil {
