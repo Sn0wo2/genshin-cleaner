@@ -4,40 +4,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"gopkg.in/ini.v1"
 )
-
-func GamesFromLogs(miHoYoDir string) []Game {
-	seen := make(map[string]struct{})
-	var games []Game
-	logPathRe := regexp.MustCompile(`(?:[A-Za-z]:[\\/]|/)[^")]*?_Data[\\/]`)
-	for _, entry := range []string{
-		"原神",
-	} {
-		entryDir, err := os.Stat(filepath.Join(miHoYoDir, entry))
-		if err != nil || !entryDir.IsDir() {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(miHoYoDir, entryDir.Name(), "output_log.txt"))
-		if err != nil {
-			continue
-		}
-		for _, match := range logPathRe.FindAllString(string(data), -1) {
-			root := filepath.Dir(strings.TrimRight(match, `\/`))
-			if _, ok := seen[root]; ok {
-				continue
-			}
-			seen[root] = struct{}{}
-			if g, ok := InspectGame(root); ok {
-				games = append(games, g)
-			}
-		}
-	}
-	return games
-}
 
 var skip = map[string]struct{}{
 	"windows":                   {},
