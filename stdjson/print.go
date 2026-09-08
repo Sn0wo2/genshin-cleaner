@@ -8,7 +8,6 @@ import (
 	"github.com/Sn0wo2/go-common/helper"
 )
 
-// Pretty controls indented (human-readable) JSON output.
 var Pretty bool
 
 type Stage string
