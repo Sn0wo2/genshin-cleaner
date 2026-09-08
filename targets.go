@@ -34,8 +34,11 @@ func collectRules(g genshin.Game, editor bool) ([]rule, error) {
 	webCaches := filepath.Join(g.Data, "webCaches")
 
 	entries, err := os.ReadDir(webCaches)
-	if err != nil && !os.IsNotExist(err) {
-		return nil, err
+	if err != nil {
+		// On Windows, ReadDir can report a missing path for an existing file.
+		if _, statErr := os.Lstat(webCaches); !os.IsNotExist(err) || !os.IsNotExist(statErr) {
+			return nil, err
+		}
 	}
 	var scanErr error
 	scan := func(cwd string, match func(rel string) bool) []target {
