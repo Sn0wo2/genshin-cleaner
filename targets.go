@@ -52,9 +52,11 @@ func collectRules(g genshin.Game, editor bool) []rule {
 	}
 
 	logs := scanFiles(g.Data, func(rel string) bool {
-		return rel == "Persistent/DownloadError.log" || strings.HasSuffix(rel, ".tmp") || strings.HasSuffix(rel, ".bak")
+		rel = strings.ToLower(rel)
+		return rel == "persistent/downloaderror.log" || strings.HasSuffix(rel, ".tmp") || strings.HasSuffix(rel, ".bak")
 	})
 	logs = append(logs, scanFiles(g.Root, func(rel string) bool {
+		rel = strings.ToLower(rel)
 		return strings.HasSuffix(rel, ".log") && !strings.Contains(rel, "/")
 	})...)
 
