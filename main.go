@@ -155,6 +155,7 @@ func main() {
 			result = append(result, g)
 		}
 	}
+	games = result
 
 	if path == "" && len(games) == 0 {
 		stdjson.New(stdjson.StageError, "Genshin not found, pass the game dir (or its parent)").Write()
