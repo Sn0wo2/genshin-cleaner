@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -22,11 +23,27 @@ type rule struct {
 	Targets []target `json:"targets"`
 }
 
-func collectRules(g genshin.Game, editor bool) []rule {
+func collectRules(g genshin.Game, editor bool) ([]rule, error) {
+	for _, path := range []string{g.Root, g.Data} {
+		if _, err := os.Stat(path); err != nil {
+			return nil, err
+		}
+	}
+
 	streaming := filepath.Join(g.Data, "StreamingAssets")
 	webCaches := filepath.Join(g.Data, "webCaches")
 
-	entries, _ := os.ReadDir(webCaches)
+	entries, err := os.ReadDir(webCaches)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	var scanErr error
+	scan := func(cwd string, match func(rel string) bool) []target {
+		targets, err := scanFiles(cwd, match)
+		scanErr = errors.Join(scanErr, err)
+		return targets
+	}
+
 	var versions []string
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -47,15 +64,15 @@ func collectRules(g genshin.Game, editor bool) []rule {
 		latest = versions[len(versions)-1]
 		for _, cache := range versions[:len(versions)-1] {
 			directory := filepath.Join(webCaches, cache)
-			oldCaches = append(oldCaches, target{Path: directory, Size: totalSize(scanFiles(directory, nil))})
+			oldCaches = append(oldCaches, target{Path: directory, Size: totalSize(scan(directory, nil))})
 		}
 	}
 
-	logs := scanFiles(g.Data, func(rel string) bool {
+	logs := scan(g.Data, func(rel string) bool {
 		rel = strings.ToLower(rel)
 		return rel == "persistent/downloaderror.log" || strings.HasSuffix(rel, ".tmp") || strings.HasSuffix(rel, ".bak")
 	})
-	logs = append(logs, scanFiles(g.Root, func(rel string) bool {
+	logs = append(logs, scan(g.Root, func(rel string) bool {
 		rel = strings.ToLower(rel)
 		return strings.HasSuffix(rel, ".log") && !strings.Contains(rel, "/")
 	})...)
@@ -64,22 +81,22 @@ func collectRules(g genshin.Game, editor bool) []rule {
 		{
 			Title:   "Cutscene videos (*.usm)",
 			Note:    "launcher re-downloads on base-resource updates",
-			Targets: scanFiles(filepath.Join(streaming, "VideoAssets"), func(p string) bool { return strings.HasSuffix(p, ".usm") }),
+			Targets: scan(filepath.Join(streaming, "VideoAssets"), func(p string) bool { return strings.HasSuffix(p, ".usm") }),
 		},
 		{
 			Title:   "BeyondUGC audio",
 			Note:    "launcher re-downloads on base-resource updates",
-			Targets: scanFiles(filepath.Join(streaming, "AudioAssets", "BeyondUGC"), nil),
+			Targets: scan(filepath.Join(streaming, "AudioAssets", "BeyondUGC"), nil),
 		},
 		{
 			Title:   "MusicGame audio",
 			Note:    "launcher re-downloads on base-resource updates",
-			Targets: scanFiles(filepath.Join(streaming, "AudioAssets", "MusicGame"), nil),
+			Targets: scan(filepath.Join(streaming, "AudioAssets", "MusicGame"), nil),
 		},
 		{
 			Title:   "Persistent on-demand CGs",
 			Note:    "downloaded on demand, stays deleted",
-			Targets: scanFiles(filepath.Join(g.Data, "Persistent", "VideoAssets"), nil),
+			Targets: scan(filepath.Join(g.Data, "Persistent", "VideoAssets"), nil),
 		},
 		{
 			Title:   "Old webCaches versions",
@@ -96,33 +113,55 @@ func collectRules(g genshin.Game, editor bool) []rule {
 		rules = append(rules, rule{
 			Title:   "BeyondAssistEditor (UGC editor)",
 			Note:    "restorable via beyond_pkg_version",
-			Targets: scanFiles(filepath.Join(g.Root, "BeyondAssets", "BeyondAssistEditor"), nil),
+			Targets: scan(filepath.Join(g.Root, "BeyondAssets", "BeyondAssistEditor"), nil),
 		})
 	}
-	return rules
+	if scanErr != nil {
+		return nil, scanErr
+	}
+	return rules, nil
 }
 
-func scanFiles(cwd string, match func(rel string) bool) []target {
-	if info, err := os.Lstat(cwd); err != nil || info.Mode()&os.ModeSymlink != 0 {
-		return []target{}
+func scanFiles(cwd string, match func(rel string) bool) ([]target, error) {
+	targets := []target{}
+	info, err := os.Lstat(cwd)
+	if os.IsNotExist(err) {
+		return targets, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return targets, nil
 	}
 
-	var targets = []target{}
-
-	_ = filepath.WalkDir(cwd, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	err = filepath.WalkDir(cwd, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
 			return nil
 		}
-		rel, _ := filepath.Rel(cwd, path)
+		rel, err := filepath.Rel(cwd, path)
+		if err != nil {
+			return err
+		}
 		if match != nil && !match(filepath.ToSlash(rel)) {
 			return nil
 		}
-		if info, err := d.Info(); err == nil && !info.IsDir() {
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
 			targets = append(targets, target{Path: path, Size: info.Size()})
 		}
 		return nil
 	})
-	return targets
+	if err != nil {
+		return nil, err
+	}
+	return targets, nil
 }
 
 func totalSize(targets []target) int64 {

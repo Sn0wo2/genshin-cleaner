@@ -179,7 +179,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	rules := collectRules(g, editor)
+	rules, err := collectRules(g, editor)
+	if err != nil {
+		stdjson.New(stdjson.StageError, "failed to scan cleanup targets").WithData(output{
+			Game:   &g,
+			Failed: []string{err.Error()},
+		}).Write()
+		os.Exit(1)
+	}
 	count := 0
 	var total int64
 	for _, r := range rules {
