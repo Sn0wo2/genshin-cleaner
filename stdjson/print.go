@@ -37,7 +37,7 @@ func (o *OutPut[T]) WithData(data T) *OutPut[T] {
 	return o
 }
 
-func (o *OutPut[T]) Bytes() []byte {
+func (o *OutPut[T]) Bytes() ([]byte, error) {
 	var output []byte
 	var err error
 	if Pretty {
@@ -46,17 +46,25 @@ func (o *OutPut[T]) Bytes() []byte {
 		output, err = json.Marshal(o)
 	}
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return output
+	return output, nil
 }
 
 func (o *OutPut[T]) String() string {
-	return helper.BytesToString(o.Bytes())
+	output, err := o.Bytes()
+	if err != nil {
+		return ""
+	}
+	return helper.BytesToString(output)
 }
 
 func (o *OutPut[T]) WriteTo(w io.Writer) (int64, error) {
-	n, err := w.Write(append(o.Bytes(), '\n'))
+	output, err := o.Bytes()
+	if err != nil {
+		return 0, err
+	}
+	n, err := w.Write(append(output, '\n'))
 	return int64(n), err
 }
 
