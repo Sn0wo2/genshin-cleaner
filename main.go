@@ -18,16 +18,16 @@ import (
 )
 
 type output struct {
-	Mode         string         `json:"mode,omitempty"`
-	DryRun       bool           `json:"dryRun,omitempty"`
-	Game         *genshin.Game  `json:"game,omitempty"`
-	Games        []genshin.Game `json:"games,omitempty"`
-	TotalItems   int            `json:"totalItems,omitempty"`
-	TotalBytes   int64          `json:"totalBytes,omitempty"`
-	Rules        []rule         `json:"rules,omitempty"`
-	DeletedItems int            `json:"deletedItems,omitempty"`
-	FreedBytes   int64          `json:"freedBytes,omitempty"`
-	Failed       []string       `json:"failed,omitempty"`
+	Mode         string             `json:"mode,omitempty"`
+	DryRun       bool               `json:"dryRun,omitempty"`
+	Game         *genshin.Genshin   `json:"game,omitempty"`
+	Games        []genshin.Genshin  `json:"games,omitempty"`
+	TotalItems   int                `json:"totalItems,omitempty"`
+	TotalBytes   int64              `json:"totalBytes,omitempty"`
+	Rules        []genshin.ScanRule `json:"rules,omitempty"`
+	DeletedItems int                `json:"deletedItems,omitempty"`
+	FreedBytes   int64              `json:"freedBytes,omitempty"`
+	Failed       []string           `json:"failed,omitempty"`
 }
 
 func main() {
@@ -59,11 +59,16 @@ func main() {
 		path = args[0]
 	}
 
-	var games []genshin.Game
+	var games []genshin.Genshin
 
 	if path != "" {
 		stdjson.New(stdjson.StageInfo, "scanning genshin dir: "+path).Write()
-		games = genshin.DiscoverGames(path)
+		var err error
+		games, err = genshin.DiscoverGenshins(path)
+		if err != nil {
+			stdjson.New(stdjson.StageError, err.Error()).Write()
+			os.Exit(1)
+		}
 	} else {
 		stdjson.New(stdjson.StageInfo, "scanning registry genshin").Write()
 
@@ -85,8 +90,11 @@ func main() {
 				continue
 			}
 
-			if g, ok := genshin.InspectGame(value); ok {
+			if g, err := genshin.InspectGenshin(value); err == nil {
 				games = append(games, g)
+			} else {
+				stdjson.New(stdjson.StageWarn, err.Error()).Write()
+				continue
 			}
 		}
 
@@ -118,8 +126,11 @@ func main() {
 					continue
 				}
 				seen[root] = struct{}{}
-				if g, ok := genshin.InspectGame(root); ok {
+				if g, err := genshin.InspectGenshin(root); err == nil {
 					games = append(games, g)
+				} else {
+					stdjson.New(stdjson.StageWarn, err.Error()).Write()
+					continue
 				}
 			}
 		}
@@ -138,7 +149,13 @@ func main() {
 			}
 
 			for _, root := range roots {
-				games = append(games, genshin.DiscoverGames(root)...)
+				var err error
+				games, err = genshin.DiscoverGenshins(root)
+				if err != nil {
+					stdjson.New(stdjson.StageError, err.Error()).Write()
+					os.Exit(1)
+				}
+				games = append(games, games...)
 			}
 
 			stdjson.New(stdjson.StageInfo, fmt.Sprintf("scaned %d games", len(games))).WithData(games).Write()
@@ -175,7 +192,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	rules, err := collectRules(g, editor)
+	rules, err := genshin.CollectRules(g, editor)
 	if err != nil {
 		stdjson.New(stdjson.StageError, "failed to scan cleanup targets").WithData(output{
 			Game:   &g,
@@ -187,7 +204,14 @@ func main() {
 	var total int64
 	for _, r := range rules {
 		count += len(r.Targets)
-		total += totalSize(r.Targets)
+		for _, t := range r.Targets {
+			info, err := t.Info()
+			if err != nil {
+				continue
+			}
+
+			total += info.Size()
+		}
 	}
 
 	if !deleteMode {
@@ -226,10 +250,15 @@ func main() {
 	var failed []string
 	for _, r := range rules {
 		for _, t := range r.Targets {
-			if err := os.RemoveAll(t.Path); err != nil {
-				failed = append(failed, t.Path)
+			info, err := t.Info()
+			if err != nil {
+				continue
+			}
+
+			if err := os.RemoveAll(t.Name()); err != nil {
+				failed = append(failed, t.Name())
 			} else {
-				freed += t.Size
+				freed += info.Size()
 				deleted++
 			}
 		}

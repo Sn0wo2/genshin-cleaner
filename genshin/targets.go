@@ -1,4 +1,4 @@
-package main
+package genshin
 
 import (
 	"errors"
@@ -8,22 +8,16 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Sn0wo2/genshin-cleaner/genshin"
 	"github.com/hashicorp/go-version"
 )
 
-type target struct {
-	Path string `json:"path"`
-	Size int64  `json:"size"`
+type ScanRule struct {
+	Title   string        `json:"title"`
+	Note    string        `json:"note"`
+	Targets []fs.DirEntry `json:"targets"`
 }
 
-type rule struct {
-	Title   string   `json:"title"`
-	Note    string   `json:"note"`
-	Targets []target `json:"targets"`
-}
-
-func collectRules(g genshin.Game, editor bool) ([]rule, error) {
+func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 	for _, path := range []string{g.Root, g.Data} {
 		if _, err := os.Stat(path); err != nil {
 			return nil, err
@@ -35,39 +29,68 @@ func collectRules(g genshin.Game, editor bool) ([]rule, error) {
 
 	entries, err := os.ReadDir(webCaches)
 	if err != nil {
-		// On Windows, ReadDir can report a missing path for an existing file.
 		if _, statErr := os.Lstat(webCaches); !os.IsNotExist(err) || !os.IsNotExist(statErr) {
 			return nil, err
 		}
 	}
+
 	var scanErr error
-	scan := func(cwd string, match func(rel string) bool) []target {
-		targets, err := scanFiles(cwd, match)
+	scan := func(cwd string, match func(rel string) bool) []fs.DirEntry {
+		targets := []fs.DirEntry{}
+		info, err := os.Lstat(cwd)
+		if os.IsNotExist(err) {
+			return targets
+		}
+		if err != nil {
+			return nil
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 {
+			return targets
+		}
+
+		err = filepath.WalkDir(cwd, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+
+			rel, err := filepath.Rel(cwd, path)
+			if err != nil {
+				return nil
+			}
+
+			if match != nil && !match(filepath.ToSlash(rel)) {
+				return nil
+			}
+
+			targets = append(targets, d)
+			return nil
+		})
+		if err != nil {
+			return nil
+		}
 		scanErr = errors.Join(scanErr, err)
 		return targets
 	}
 
-	var versions []string
+	var versions []*version.Version
 	for _, entry := range entries {
 		if entry.IsDir() {
-			if _, err := version.NewVersion(entry.Name()); err == nil {
-				versions = append(versions, entry.Name())
+			if ver, err := version.NewVersion(entry.Name()); err == nil {
+				versions = append(versions, ver)
 			}
 		}
 	}
-	slices.SortFunc(versions, func(a, b string) int {
-		va, _ := version.NewVersion(a)
-		vb, _ := version.NewVersion(b)
-		return va.Compare(vb)
+	slices.SortFunc(versions, func(a, b *version.Version) int {
+		return a.Compare(b)
 	})
 
-	latest := "none"
-	oldCaches := []target{}
+	var latest *version.Version
+	oldCaches := []fs.DirEntry{}
 	if len(versions) > 0 {
 		latest = versions[len(versions)-1]
 		for _, cache := range versions[:len(versions)-1] {
-			directory := filepath.Join(webCaches, cache)
-			oldCaches = append(oldCaches, target{Path: directory, Size: totalSize(scan(directory, nil))})
+			oldCaches = append(oldCaches, scan(filepath.Join(webCaches, cache.String()), nil)...)
 		}
 	}
 
@@ -80,7 +103,7 @@ func collectRules(g genshin.Game, editor bool) ([]rule, error) {
 		return strings.HasSuffix(rel, ".log") && !strings.Contains(rel, "/")
 	})...)
 
-	rules := []rule{
+	rules := []ScanRule{
 		{
 			Title:   "Cutscene videos (*.usm)",
 			Note:    "launcher re-downloads on base-resource updates",
@@ -103,7 +126,7 @@ func collectRules(g genshin.Game, editor bool) ([]rule, error) {
 		},
 		{
 			Title:   "Old webCaches versions",
-			Note:    "keeping " + latest,
+			Note:    "keeping " + latest.String(),
 			Targets: oldCaches,
 		},
 		{
@@ -113,7 +136,7 @@ func collectRules(g genshin.Game, editor bool) ([]rule, error) {
 		},
 	}
 	if editor {
-		rules = append(rules, rule{
+		rules = append(rules, ScanRule{
 			Title:   "BeyondAssistEditor (UGC editor)",
 			Note:    "restorable via beyond_pkg_version",
 			Targets: scan(filepath.Join(g.Root, "BeyondAssets", "BeyondAssistEditor"), nil),
@@ -125,50 +148,3 @@ func collectRules(g genshin.Game, editor bool) ([]rule, error) {
 	return rules, nil
 }
 
-func scanFiles(cwd string, match func(rel string) bool) ([]target, error) {
-	targets := []target{}
-	info, err := os.Lstat(cwd)
-	if os.IsNotExist(err) {
-		return targets, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return targets, nil
-	}
-
-	err = filepath.WalkDir(cwd, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(cwd, path)
-		if err != nil {
-			return err
-		}
-		if match != nil && !match(filepath.ToSlash(rel)) {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		targets = append(targets, target{Path: path, Size: info.Size()})
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return targets, nil
-}
-
-func totalSize(targets []target) int64 {
-	var total int64
-	for _, t := range targets {
-		total += t.Size
-	}
-	return total
-}
