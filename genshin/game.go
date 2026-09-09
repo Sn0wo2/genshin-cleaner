@@ -1,6 +1,6 @@
 package genshin
 
-type Game struct {
+type Genshin struct {
 	Root string `json:"root"`
 	Data string `json:"data"`
 	Biz  string `json:"biz"`

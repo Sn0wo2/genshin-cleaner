@@ -1,6 +1,8 @@
 package genshin
 
 import (
+	"cmp"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -34,14 +36,14 @@ var skip = map[string]struct{}{
 	"target":                    {},
 }
 
-func DiscoverGames(root string) []Game {
-	var games []Game
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+func DiscoverGenshins(root string) ([]Genshin, error) {
+	var games []Genshin
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || !d.IsDir() || path == root {
 			return nil
 		}
 
-		if _, ok := skip[strings.ToLower(d.Name())]; ok { // 跳跳跳
+		if _, ok := skip[strings.ToLower(d.Name())]; ok { // O(1) 跳跳跳
 			return filepath.SkipDir
 		}
 
@@ -49,22 +51,30 @@ func DiscoverGames(root string) []Game {
 			return filepath.SkipDir
 		}
 
-		if strings.HasSuffix(d.Name(), "_Data") { // YuanShen_Data | GenshinImpact_Data
-			if info, err := os.Stat(filepath.Join(path, "StreamingAssets")); err == nil && info.IsDir() {
-				if g, ok := InspectGame(filepath.Dir(path)); ok {
-					games = append(games, g)
-				}
+		if d.Name() != "YuanShen_Data" && d.Name() != "Genshin_Data" { // YuanShen_Data | GenshinImpact_Data
+			return nil
+		}
+		if info, err := os.Stat(filepath.Join(path, "StreamingAssets")); err == nil && info.IsDir() {
+			if g, err := InspectGenshin(filepath.Dir(path)); err == nil {
+				games = append(games, g)
+			} else {
+				return err
 			}
 		}
 		return nil
 	})
-	return games
+	return games, err
 }
 
-func InspectGame(root string) (Game, bool) {
+func InspectGenshin(root string) (Genshin, error) {
+	absolute, err := filepath.Abs(root)
+	if err != nil {
+		return Genshin{}, err
+	}
+
 	config := make(map[string]string)
 
-	if cfg, err := ini.Load(filepath.Join(root, "config.ini")); err == nil {
+	if cfg, err := ini.Load(filepath.Join(absolute, "config.ini")); err == nil {
 		for _, section := range cfg.Sections() {
 			for _, key := range section.Keys() {
 				config[key.Name()] = strings.Trim(strings.TrimSpace(key.String()), `"`)
@@ -73,32 +83,26 @@ func InspectGame(root string) (Game, bool) {
 	}
 
 	if !strings.HasPrefix(config["game_biz"], "hk4e") { // hk4e_cn | hk4e_global | hk4e_bilibili
-		return Game{}, false
+		return Genshin{}, errors.New("not hk4e (Genshin)")
 	}
 
-	entries, err := os.ReadDir(root)
+	entries, err := os.ReadDir(absolute)
 	if err != nil {
-		return Game{}, false
+		return Genshin{}, err
 	}
 
 	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasSuffix(entry.Name(), "_Data") { // YuanShen_Data | GenshinImpact_Data
+		if !entry.IsDir() || entry.Name() != "YuanShen_Data" && entry.Name() != "Genshin_Data" { // YuanShen_Data | GenshinImpact_Data
 			continue
 		}
 
-		data := filepath.Join(root, entry.Name())
+		data := filepath.Join(absolute, entry.Name())
 		if info, err := os.Stat(filepath.Join(data, "StreamingAssets")); err != nil || !info.IsDir() {
 			continue
 		}
-		version := config["game_version"]
-		if version == "" {
-			version = "?"
-		}
-		absolute, err := filepath.Abs(root)
-		if err != nil {
-			return Game{}, false
-		}
-		return Game{Root: absolute, Data: filepath.Join(absolute, entry.Name()), Biz: config["game_biz"], Ver: version}, true
+
+		// game_biz前面就判空了, 所以不需要cmp.Or
+		return Genshin{Root: absolute, Data: data, Biz: config["game_biz"], Ver: cmp.Or(config["game_version"], "%UNKNOWN%")}, nil
 	}
-	return Game{}, false
+	return Genshin{}, errors.New("not found Genshin")
 }
