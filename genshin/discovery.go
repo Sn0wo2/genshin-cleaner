@@ -51,7 +51,7 @@ func DiscoverGenshins(root string) ([]Genshin, error) {
 			return filepath.SkipDir
 		}
 
-		if d.Name() != "YuanShen_Data" && d.Name() != "Genshin_Data" { // YuanShen_Data | GenshinImpact_Data
+		if d.Name() != "YuanShen_Data" && d.Name() != "GenshinImpact_Data" { // YuanShen_Data | GenshinImpact_Data
 			return nil
 		}
 		if info, err := os.Stat(filepath.Join(path, "StreamingAssets")); err == nil && info.IsDir() {
