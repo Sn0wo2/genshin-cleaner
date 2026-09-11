@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,39 +18,23 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-type output struct {
-	Mode         string             `json:"mode,omitempty"`
-	DryRun       bool               `json:"dryRun,omitempty"`
-	Game         *genshin.Genshin   `json:"game,omitempty"`
-	Games        []genshin.Genshin  `json:"games,omitempty"`
-	TotalItems   int                `json:"totalItems,omitempty"`
-	TotalBytes   int64              `json:"totalBytes,omitempty"`
-	Rules        []genshin.ScanRule `json:"rules,omitempty"`
-	DeletedItems int                `json:"deletedItems,omitempty"`
-	FreedBytes   int64              `json:"freedBytes,omitempty"`
-	Failed       []string           `json:"failed,omitempty"`
-}
-
 func main() {
+	stdjson.Init(false)
 	if runtime.GOOS != "windows" {
-		stdjson.New(stdjson.StageError, "only Windows is supported").Write()
+		stdjson.Log(slog.LevelError, "startup", "only Windows is supported", nil)
 		os.Exit(1)
 	}
 
-	var deleteMode, editor, dryRun, debug bool
+	var deleteMode, editor, debug bool
 	pflag.BoolVar(&deleteMode, "delete", false, "actually delete files")
-	pflag.BoolVar(&dryRun, "dry-run", false, "preview only (overrides --delete)")
 	pflag.BoolVar(&editor, "editor", false, "also remove BeyondAssistEditor (UGC editor)")
 	pflag.BoolVar(&debug, "debug", false, "pretty-print (indented) JSON output")
 	pflag.Parse()
-	stdjson.Pretty = debug
-	if dryRun {
-		deleteMode = false
-	}
+	stdjson.Init(debug)
 
 	args := pflag.Args()
 	if len(args) > 1 {
-		stdjson.New(stdjson.StageError, "too many arguments, pass one game dir").Write()
+		stdjson.Log(slog.LevelError, "startup", "too many arguments, pass one game dir", nil)
 		os.Exit(1)
 	}
 
@@ -60,17 +45,22 @@ func main() {
 	}
 
 	var games []genshin.Genshin
+	var failed []string
 
 	if path != "" {
-		stdjson.New(stdjson.StageInfo, "scanning genshin dir: "+path).Write()
+		stdjson.Log(slog.LevelInfo, "scan", "scanning genshin dir: "+path, nil)
 		var err error
 		games, err = genshin.DiscoverGenshins(path)
 		if err != nil {
-			stdjson.New(stdjson.StageError, err.Error()).Write()
-			os.Exit(1)
+			if len(games) == 0 {
+				stdjson.Log(slog.LevelError, "scan", err.Error(), nil)
+				os.Exit(1)
+			}
+			failed = append(failed, strings.Split(err.Error(), "\n")...)
+			stdjson.Log(slog.LevelWarn, "scan", err.Error(), nil)
 		}
 	} else {
-		stdjson.New(stdjson.StageInfo, "scanning registry genshin").Write()
+		stdjson.Log(slog.LevelInfo, "scan", "scanning registry genshin", nil)
 
 		// Inspired by the registry locations used by BetterGI and Starward
 		// https://github.com/babalae/better-genshin-impact/blob/b3e46b3004b8e4a1065846243a3a2a518b9a214d/BetterGenshinImpact/Genshin/Paths/RegistryGameLocator.cs#L18
@@ -93,14 +83,15 @@ func main() {
 			if g, err := genshin.InspectGenshin(value); err == nil {
 				games = append(games, g)
 			} else {
-				stdjson.New(stdjson.StageWarn, err.Error()).Write()
+				failed = append(failed, err.Error())
+				stdjson.Log(slog.LevelWarn, "scan", err.Error(), nil)
 				continue
 			}
 		}
 
-		stdjson.New(stdjson.StageInfo, fmt.Sprintf("scaned %d games", len(games))).WithData(games).Write()
+		stdjson.Log(slog.LevelInfo, "scan", fmt.Sprintf("scaned %d games", len(games)), games)
 
-		stdjson.New(stdjson.StageInfo, "scanning「LocalLow」genshin logs").Write()
+		stdjson.Log(slog.LevelInfo, "scan", "scanning「LocalLow」genshin logs", nil)
 
 		home, _ := os.UserHomeDir()
 
@@ -118,6 +109,8 @@ func main() {
 			}
 			data, err := os.ReadFile(filepath.Join(miHoYoDir, entryDir.Name(), "output_log.txt"))
 			if err != nil {
+				failed = append(failed, err.Error())
+				stdjson.Log(slog.LevelWarn, "scan", err.Error(), nil)
 				continue
 			}
 			for _, match := range logPathRe.FindAllString(string(data), -1) {
@@ -129,14 +122,15 @@ func main() {
 				if g, err := genshin.InspectGenshin(root); err == nil {
 					games = append(games, g)
 				} else {
-					stdjson.New(stdjson.StageWarn, err.Error()).Write()
+					failed = append(failed, err.Error())
+					stdjson.Log(slog.LevelWarn, "scan", err.Error(), nil)
 					continue
 				}
 			}
 		}
-		stdjson.New(stdjson.StageInfo, fmt.Sprintf("scaned %d games", len(games))).WithData(games).Write()
+		stdjson.Log(slog.LevelInfo, "scan", fmt.Sprintf("scaned %d games", len(games)), games)
 		if len(games) == 0 {
-			stdjson.New(stdjson.StageWarn, "failed to find genshin, scanning all drives").Write()
+			stdjson.Log(slog.LevelWarn, "scan", "failed to find genshin, scanning all drives", nil)
 
 			var roots []string
 
@@ -149,16 +143,15 @@ func main() {
 			}
 
 			for _, root := range roots {
-				var err error
-				games, err = genshin.DiscoverGenshins(root)
+				discovered, err := genshin.DiscoverGenshins(root)
 				if err != nil {
-					stdjson.New(stdjson.StageError, err.Error()).Write()
-					os.Exit(1)
+					failed = append(failed, strings.Split(err.Error(), "\n")...)
+					stdjson.Log(slog.LevelWarn, "scan", err.Error(), nil)
 				}
-				games = append(games, games...)
+				games = append(games, discovered...)
 			}
 
-			stdjson.New(stdjson.StageInfo, fmt.Sprintf("scaned %d games", len(games))).WithData(games).Write()
+			stdjson.Log(slog.LevelInfo, "scan", fmt.Sprintf("scaned %d games", len(games)), games)
 		}
 	}
 
@@ -176,37 +169,55 @@ func main() {
 
 	if path == "" && len(games) > 1 {
 		if deleteMode {
-			stdjson.New(stdjson.StageError, "no game dir given, pass one game dir").WithData(games).Write()
+			stdjson.Log(slog.LevelError, "select", "no game dir given, pass one game dir", games)
 			os.Exit(1)
 		}
-		stdjson.New(stdjson.StageResult, "list detected Genshin installs").WithData(output{Mode: "list", Games: games}).Write()
+		stdjson.Log(slog.LevelInfo, "list", "list detected Genshin installs", struct {
+			Mode   string            `json:"mode,omitempty"`
+			Games  []genshin.Genshin `json:"games,omitempty"`
+			Failed []string          `json:"failed,omitempty"`
+		}{
+			Mode:   "list",
+			Games:  games,
+			Failed: failed,
+		})
+		if len(failed) > 0 {
+			os.Exit(2)
+		}
 		return
 	}
 	if len(games) == 0 {
-		stdjson.New(stdjson.StageError, "Genshin not found, pass the game dir (or its parent)").Write()
+		stdjson.Log(slog.LevelError, "select", "Genshin not found, pass the game dir (or its parent)", nil)
 		os.Exit(1)
 	}
 	g := games[0]
 	if len(games) > 1 {
-		stdjson.New(stdjson.StageError, "multiple Genshin installs found, pass one game dir").WithData(games).Write()
+		stdjson.Log(slog.LevelError, "select", "multiple Genshin installs found, pass one game dir", games)
 		os.Exit(1)
 	}
 
 	rules, err := genshin.CollectRules(g, editor)
-	if err != nil {
-		stdjson.New(stdjson.StageError, "failed to scan cleanup targets").WithData(output{
-			Game:   &g,
-			Failed: []string{err.Error()},
-		}).Write()
+	if err != nil && (deleteMode || rules == nil) {
+		stdjson.Log(slog.LevelError, "collect", "failed to scan cleanup targets: "+err.Error(), struct {
+			Game   *genshin.Genshin `json:"game,omitempty"`
+			Failed []string         `json:"failed,omitempty"`
+		}{Game: &g, Failed: []string{err.Error()}})
 		os.Exit(1)
+	}
+	if err != nil {
+		failed = append(failed, strings.Split(err.Error(), "\n")...)
+		stdjson.Log(slog.LevelWarn, "collect", err.Error(), nil)
 	}
 	count := 0
 	var total int64
 	for _, r := range rules {
 		count += len(r.Targets)
-		for _, t := range r.Targets {
+		for p, t := range r.Targets {
 			info, err := t.Info()
 			if err != nil {
+				if !deleteMode {
+					failed = append(failed, fmt.Sprintf("%s: %s", p, err))
+				}
 				continue
 			}
 
@@ -215,21 +226,33 @@ func main() {
 	}
 
 	if !deleteMode {
-		stdjson.New(stdjson.StageResult, "dry run: show files that would be deleted").WithData(output{
+		stdjson.Log(slog.LevelInfo, "dry-run", "dry run: show files that would be deleted", struct {
+			Mode       string             `json:"mode,omitempty"`
+			DryRun     bool               `json:"dryRun,omitempty"`
+			Game       *genshin.Genshin   `json:"game,omitempty"`
+			TotalItems int                `json:"totalItems,omitempty"`
+			TotalBytes int64              `json:"totalBytes,omitempty"`
+			Rules      []genshin.ScanRule `json:"rules,omitempty"`
+			Failed     []string           `json:"failed,omitempty"`
+		}{
 			Mode:       "dry-run",
 			DryRun:     true,
 			Game:       &g,
 			TotalItems: count,
 			TotalBytes: total,
 			Rules:      rules,
-		}).Write()
+			Failed:     failed,
+		})
+		if len(failed) > 0 {
+			os.Exit(2)
+		}
 		return
 	}
 
 	running := false
 	processes, err := process.Processes()
 	if err != nil {
-		stdjson.New(stdjson.StageError, "checking processes: "+err.Error()).Write()
+		stdjson.Log(slog.LevelError, "check", "checking processes: "+err.Error(), nil)
 		os.Exit(1)
 	}
 	for _, proc := range processes {
@@ -241,27 +264,46 @@ func main() {
 		}
 	}
 	if running {
-		stdjson.New(stdjson.StageError, "game is running. Close it before deleting").Write()
+		stdjson.Log(slog.LevelError, "check", "genshin is running. Close it before deleting", nil)
 		os.Exit(1)
 	}
 
 	var freed int64
 	var deleted int
-	var failed []string
 	for _, r := range rules {
-		for _, t := range r.Targets {
+		for p, t := range r.Targets {
 			info, err := t.Info()
 			if err != nil {
+				failed = append(failed, fmt.Sprintf("%s: %s", p, err))
 				continue
 			}
 
-			if err := os.RemoveAll(t.Name()); err != nil {
-				failed = append(failed, t.Name())
+			if err := os.RemoveAll(p); err != nil {
+				failed = append(failed, fmt.Sprintf("%s: %s", p, err))
 			} else {
 				freed += info.Size()
 				deleted++
 			}
 		}
 	}
-	stdjson.New(stdjson.StageResult, "delete files").WithData(output{Mode: "delete", Game: &g, TotalItems: count, TotalBytes: total, DeletedItems: deleted, FreedBytes: freed, Failed: failed}).Write()
+	stdjson.Log(slog.LevelInfo, "delete", "delete files", struct {
+		Mode         string           `json:"mode,omitempty"`
+		Game         *genshin.Genshin `json:"game,omitempty"`
+		TotalItems   int              `json:"totalItems,omitempty"`
+		TotalBytes   int64            `json:"totalBytes,omitempty"`
+		DeletedItems int              `json:"deletedItems,omitempty"`
+		FreedBytes   int64            `json:"freedBytes,omitempty"`
+		Failed       []string         `json:"failed,omitempty"`
+	}{
+		Mode:         "delete",
+		Game:         &g,
+		TotalItems:   count,
+		TotalBytes:   total,
+		DeletedItems: deleted,
+		FreedBytes:   freed,
+		Failed:       failed,
+	})
+	if len(failed) > 0 {
+		os.Exit(2)
+	}
 }

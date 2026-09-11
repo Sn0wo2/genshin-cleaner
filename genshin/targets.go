@@ -3,6 +3,7 @@ package genshin
 import (
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,9 +13,9 @@ import (
 )
 
 type ScanRule struct {
-	Title   string        `json:"title"`
-	Note    string        `json:"note"`
-	Targets []fs.DirEntry `json:"targets"`
+	Title   string                 `json:"title"`
+	Note    string                 `json:"note"`
+	Targets map[string]fs.DirEntry `json:"targets"`
 }
 
 func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
@@ -29,33 +30,38 @@ func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 
 	entries, err := os.ReadDir(webCaches)
 	if err != nil {
-		if _, statErr := os.Lstat(webCaches); !os.IsNotExist(err) || !os.IsNotExist(statErr) {
+		if _, statErr := os.Lstat(webCaches); statErr == nil {
 			return nil, err
 		}
 	}
 
-	var scanErr error
-	scan := func(cwd string, match func(rel string) bool) []fs.DirEntry {
-		targets := []fs.DirEntry{}
+	var errs error
+	scan := func(cwd string, match func(rel string) bool) map[string]fs.DirEntry {
+		targets := make(map[string]fs.DirEntry)
 		info, err := os.Lstat(cwd)
-		if os.IsNotExist(err) {
-			return targets
-		}
 		if err != nil {
-			return nil
+			if !errors.Is(err, fs.ErrNotExist) {
+				errs = errors.Join(errs, err)
+			}
+			return targets
 		}
 
 		if info.Mode()&os.ModeSymlink != 0 {
 			return targets
 		}
 
-		err = filepath.WalkDir(cwd, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
+		filepath.WalkDir(cwd, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				errs = errors.Join(errs, err)
+				return nil
+			}
+			if d.IsDir() {
 				return nil
 			}
 
 			rel, err := filepath.Rel(cwd, path)
 			if err != nil {
+				errs = errors.Join(errs, err)
 				return nil
 			}
 
@@ -63,13 +69,9 @@ func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 				return nil
 			}
 
-			targets = append(targets, d)
+			targets[path] = d
 			return nil
 		})
-		if err != nil {
-			return nil
-		}
-		scanErr = errors.Join(scanErr, err)
 		return targets
 	}
 
@@ -86,11 +88,11 @@ func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 	})
 
 	var latest *version.Version
-	oldCaches := []fs.DirEntry{}
+	oldCaches := make(map[string]fs.DirEntry)
 	if len(versions) > 0 {
 		latest = versions[len(versions)-1]
 		for _, cache := range versions[:len(versions)-1] {
-			oldCaches = append(oldCaches, scan(filepath.Join(webCaches, cache.String()), nil)...)
+			maps.Copy(oldCaches, scan(filepath.Join(webCaches, cache.String()), nil))
 		}
 	}
 
@@ -98,10 +100,10 @@ func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 		rel = strings.ToLower(rel)
 		return rel == "persistent/downloaderror.log" || strings.HasSuffix(rel, ".tmp") || strings.HasSuffix(rel, ".bak")
 	})
-	logs = append(logs, scan(g.Root, func(rel string) bool {
+	maps.Copy(logs, scan(g.Root, func(rel string) bool {
 		rel = strings.ToLower(rel)
 		return strings.HasSuffix(rel, ".log") && !strings.Contains(rel, "/")
-	})...)
+	}))
 
 	rules := []ScanRule{
 		{
@@ -125,16 +127,20 @@ func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 			Targets: scan(filepath.Join(g.Data, "Persistent", "VideoAssets"), nil),
 		},
 		{
-			Title:   "Old webCaches versions",
-			Note:    "keeping " + latest.String(),
-			Targets: oldCaches,
-		},
-		{
 			Title:   "Logs & temp junk",
 			Note:    "DownloadError.log, *.log, *.tmp, *.bak",
 			Targets: logs,
 		},
 	}
+
+	if latest != nil {
+		rules = append(rules, ScanRule{
+			Title:   "Old webCaches versions",
+			Note:    "keeping " + latest.String(),
+			Targets: oldCaches,
+		})
+	}
+
 	if editor {
 		rules = append(rules, ScanRule{
 			Title:   "BeyondAssistEditor (UGC editor)",
@@ -142,9 +148,5 @@ func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 			Targets: scan(filepath.Join(g.Root, "BeyondAssets", "BeyondAssistEditor"), nil),
 		})
 	}
-	if scanErr != nil {
-		return nil, scanErr
-	}
-	return rules, nil
+	return rules, errs
 }
-

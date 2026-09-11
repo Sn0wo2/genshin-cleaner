@@ -3,6 +3,7 @@ package genshin
 import (
 	"cmp"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -38,8 +39,13 @@ var skip = map[string]struct{}{
 
 func DiscoverGenshins(root string) ([]Genshin, error) {
 	var games []Genshin
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || !d.IsDir() || path == root {
+	var errs error
+	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			errs = errors.Join(errs, err)
+			return nil
+		}
+		if !d.IsDir() || path == root {
 			return nil
 		}
 
@@ -57,13 +63,11 @@ func DiscoverGenshins(root string) ([]Genshin, error) {
 		if info, err := os.Stat(filepath.Join(path, "StreamingAssets")); err == nil && info.IsDir() {
 			if g, err := InspectGenshin(filepath.Dir(path)); err == nil {
 				games = append(games, g)
-			} else {
-				return err
 			}
 		}
 		return nil
 	})
-	return games, err
+	return games, errs
 }
 
 func InspectGenshin(root string) (Genshin, error) {
@@ -74,7 +78,12 @@ func InspectGenshin(root string) (Genshin, error) {
 
 	config := make(map[string]string)
 
-	if cfg, err := ini.Load(filepath.Join(absolute, "config.ini")); err == nil {
+	cfgPath := filepath.Join(absolute, "config.ini")
+	if cfg, err := ini.Load(cfgPath); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return Genshin{}, fmt.Errorf("read %s: %w", cfgPath, err)
+		}
+	} else {
 		for _, section := range cfg.Sections() {
 			for _, key := range section.Keys() {
 				config[key.Name()] = strings.Trim(strings.TrimSpace(key.String()), `"`)
@@ -83,7 +92,7 @@ func InspectGenshin(root string) (Genshin, error) {
 	}
 
 	if !strings.HasPrefix(config["game_biz"], "hk4e") { // hk4e_cn | hk4e_global | hk4e_bilibili
-		return Genshin{}, errors.New("not hk4e (Genshin)")
+		return Genshin{}, fmt.Errorf("%s: not hk4e (Genshin)", absolute)
 	}
 
 	entries, err := os.ReadDir(absolute)
@@ -92,7 +101,7 @@ func InspectGenshin(root string) (Genshin, error) {
 	}
 
 	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() != "YuanShen_Data" && entry.Name() != "Genshin_Data" { // YuanShen_Data | GenshinImpact_Data
+		if !entry.IsDir() || entry.Name() != "YuanShen_Data" && entry.Name() != "GenshinImpact_Data" { // YuanShen_Data | GenshinImpact_Data
 			continue
 		}
 
@@ -104,5 +113,5 @@ func InspectGenshin(root string) (Genshin, error) {
 		// game_biz前面就判空了, 所以不需要cmp.Or
 		return Genshin{Root: absolute, Data: data, Biz: config["game_biz"], Ver: cmp.Or(config["game_version"], "%UNKNOWN%")}, nil
 	}
-	return Genshin{}, errors.New("not found Genshin")
+	return Genshin{}, fmt.Errorf("%s: not found Genshin", absolute)
 }

@@ -11,13 +11,16 @@
 
 ```shell
 genshin-cleaner                          # dry-run if one install found, else list installs
-genshin-cleaner --dry-run                # dry-run without a path (if one install is found)
 genshin-cleaner "D:\Games\Genshin Impact"                # dry-run: JSON with dryRun flag + rules
-genshin-cleaner "D:\Games\Genshin Impact" --dry-run      # same as above, explicit
 genshin-cleaner "D:\Games\Genshin Impact" --delete       # actually delete
 genshin-cleaner "D:\Games\Genshin Impact" --delete --editor
-genshin-cleaner "D:\Games\Genshin Impact" --delete --dry-run  # safety: dry-run, never delete
 genshin-cleaner "D:\Games\Genshin Impact" --debug             # pretty-print (indented) JSON output
 
 genshin-cleaner --help
 ```
+
+## Exit codes
+
+- `0`: finished with no issues
+- `1`: failed (bad args, nothing found, game running, incomplete target scan in delete mode, ...)
+- `2`: finished but incomplete: some targets could not be scanned/read/deleted. The result JSON's `failed` array lists one `path: reason` entry per problem
