@@ -1,3 +1,19 @@
 /dist/
 /genshin-cleaner
 /genshin-cleaner.exe
+
+# WinUI / .NET build and IDE output
+/UI/**/[Bb]in/
+/UI/**/[Oo]bj/
+/UI/**/.vs/
+/UI/**/*.user
+/UI/**/*.suo
+
+# WinUI packaging output and local signing certificates
+/UI/**/AppPackages/
+/UI/**/BundleArtifacts/
+/UI/**/*.msixbundle
+/UI/**/*.pfx
+/UI/**/*.p12
+
+/rsrc_windows_amd64.syso

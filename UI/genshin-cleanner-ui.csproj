@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <AssemblyName>genshin-cleaner</AssemblyName>
+        <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+        <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
+        <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+        <RootNamespace>UI</RootNamespace>
+        <ApplicationManifest>app.manifest</ApplicationManifest>
+        <Platforms>x86;x64;ARM64</Platforms>
+        <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">x64</Platform>
+        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
+        <PublishProfile Condition="Exists('Properties\PublishProfiles\win-$(Platform).pubxml')">win-$(Platform).pubxml</PublishProfile>
+        <UseWinUI>true</UseWinUI>
+        <WindowsPackageType>None</WindowsPackageType>
+        <EnableMsixTooling>true</EnableMsixTooling>
+        <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+        <SelfContained>true</SelfContained>
+        <WindowsSdkPackageVersion>10.0.26100.56</WindowsSdkPackageVersion>
+        <WinUISDKReferences>false</WinUISDKReferences>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Content Include="Assets\**\*.png" CopyToOutputDirectory="PreserveNewest"/>
+        <Content Include="Assets\AppIcon.ico" CopyToOutputDirectory="PreserveNewest"/>
+        <Content Include="Assets\Locales\**\*.json" CopyToOutputDirectory="PreserveNewest"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Manifest Include="$(ApplicationManifest)"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="CliWrap" Version="3.10.5"/>
+        <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705"/>
+        <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0"/>
+        <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.6.1"/>
+    </ItemGroup>
+
+    <PropertyGroup>
+        <PublishReadyToRun>False</PublishReadyToRun>
+        <PublishTrimmed>False</PublishTrimmed>
+    </PropertyGroup>
+
+    <Target Name="GenerateBackendManifest" BeforeTargets="BuildGoBackend" Condition="'$(DesignTimeBuild)' != 'true' AND '$(DotNetBuildPass)' == ''" Inputs="..\backend.manifest" Outputs="..\rsrc_windows_amd64.syso">
+        <Exec Command="go tool rsrc -arch amd64 -manifest backend.manifest -o rsrc_windows_amd64.syso" WorkingDirectory=".."/>
+    </Target>
+
+    <Target Name="BuildGoBackend" BeforeTargets="BeforeBuild" Condition="'$(DesignTimeBuild)' != 'true' AND '$(DotNetBuildPass)' == ''" Inputs="..\**\*.go;..\go.mod;..\go.sum;..\rsrc_windows_amd64.syso" Outputs="$(OutDir)genshin-cleaner-backend.exe">
+        <Exec Command="go build -trimpath -ldflags &quot;-s -w&quot; -o &quot;$(OutDir)genshin-cleaner-backend.exe&quot; .."/>
+    </Target>
+
+    <Target Name="IncludeBackendInPublish" AfterTargets="ComputeFilesToPublish">
+        <ItemGroup>
+            <ResolvedFileToPublish Include="$(OutDir)genshin-cleaner-backend.exe" RelativePath="genshin-cleaner-backend.exe"/>
+        </ItemGroup>
+    </Target>
+</Project>

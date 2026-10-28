@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "genshin-cleanner-ui (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "genshin-cleanner-ui (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
