@@ -1,0 +1,168 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+    <Package Name="genshin-cleaner"
+             Manufacturer="Me0wo"
+             Version="1.0.3.0"
+             UpgradeCode="43248bb9-5e7b-4c9c-a093-0ce03f5468af"
+             Scope="perUserOrMachine"
+             Compressed="yes">
+
+        <MajorUpgrade AllowSameVersionUpgrades="yes"
+                      Schedule="afterInstallInitialize"
+                      DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+        <MediaTemplate EmbedCab="yes" />
+
+        <Icon Id="AppIcon" SourceFile="UI\Assets\AppIcon.ico" />
+        <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+        <Property Id="INSTALLFOLDER" Secure="yes" />
+        <Property Id="INSTALLSCOPE" Value="user" Secure="yes" />
+        <Property Id="USERINSTALLFOLDER" Secure="yes">
+            <RegistrySearch Id="PreviousUserFolder" Root="HKCU"
+                            Key="Software\Me0wo\genshin-cleaner" Name="InstallDir"
+                            Type="raw" Bitness="always64" />
+        </Property>
+        <Property Id="MACHINEINSTALLFOLDER" Secure="yes">
+            <RegistrySearch Id="PreviousMachineFolder" Root="HKLM"
+                            Key="Software\Me0wo\genshin-cleaner" Name="InstallDir"
+                            Type="raw" Bitness="always64" />
+        </Property>
+        <Property Id="MACHINEPROGRAMFILES" Secure="yes">
+            <RegistrySearch Id="MachineProgramFiles" Root="HKLM"
+                            Key="Software\Microsoft\Windows\CurrentVersion" Name="ProgramFilesDir"
+                            Type="raw" Bitness="always64" />
+        </Property>
+        <Property Id="INSTALLEDAPPLICATION" Secure="yes">
+            <ComponentSearch Id="InstalledApplication" Guid="7b8c8599-4edd-53d8-839b-4664f30c0cb6" Type="file" />
+        </Property>
+        <SetProperty Id="INSTALLSCOPE" Value="machine" Before="AppSearch" Sequence="both"
+                     Condition="ALLUSERS = 1 OR (ALLUSERS = 2 AND NOT MSIINSTALLPERUSER)" />
+        <SetProperty Id="CURRENTINSTALLSCOPE" Value="[INSTALLSCOPE]" After="SetINSTALLSCOPE" Sequence="both" />
+        <SetProperty Id="MACHINEINSTALLFOLDER" Value="[INSTALLEDAPPLICATION]" After="AppSearch" Sequence="both"
+                     Condition="NOT MACHINEINSTALLFOLDER AND INSTALLEDAPPLICATION AND NOT USERINSTALLFOLDER" />
+        <SetProperty Id="INSTALLFOLDER" Action="SetPreviousUserFolder" Value="[USERINSTALLFOLDER]"
+                     Before="SetPreviousMachineFolder" Sequence="both"
+                     Condition="NOT INSTALLFOLDER AND USERINSTALLFOLDER AND (NOT ALLUSERS OR (ALLUSERS = 2 AND MSIINSTALLPERUSER = 1))" />
+        <SetProperty Id="INSTALLFOLDER" Action="SetPreviousMachineFolder" Value="[MACHINEINSTALLFOLDER]"
+                     Before="SetDefaultUserFolder" Sequence="both"
+                     Condition="NOT INSTALLFOLDER AND MACHINEINSTALLFOLDER AND (ALLUSERS = 1 OR (ALLUSERS = 2 AND NOT MSIINSTALLPERUSER))" />
+        <SetProperty Id="INSTALLFOLDER" Action="SetDefaultUserFolder" Value="[LocalAppDataFolder]Programs\genshin-cleaner\"
+                     Before="CostFinalize" Sequence="both"
+                     Condition="NOT INSTALLFOLDER AND (NOT ALLUSERS OR (ALLUSERS = 2 AND MSIINSTALLPERUSER = 1))" />
+        <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" After="CostFinalize" Sequence="both" />
+
+        <CustomAction Id="BlockUserScope"
+                      Error="检测到已为所有用户安装 [ProductName]。请先卸载全局版本，或选择“所有用户”进行升级。" />
+        <CustomAction Id="BlockMachineScope"
+                      Error="检测到当前用户已安装 [ProductName]。请先卸载用户版本，或选择“仅当前用户”进行升级。" />
+        <InstallExecuteSequence>
+            <Custom Action="BlockUserScope" After="SetMACHINEINSTALLFOLDER"
+                    Condition="NOT Installed AND (NOT ALLUSERS OR (ALLUSERS = 2 AND MSIINSTALLPERUSER = 1)) AND MACHINEINSTALLFOLDER" />
+            <Custom Action="BlockMachineScope" After="BlockUserScope"
+                    Condition="NOT Installed AND (ALLUSERS = 1 OR (ALLUSERS = 2 AND NOT MSIINSTALLPERUSER)) AND USERINSTALLFOLDER" />
+        </InstallExecuteSequence>
+        <InstallUISequence>
+            <FindRelatedProducts Suppress="yes" />
+        </InstallUISequence>
+
+        <WixVariable Id="WixUIBannerBmp" Value="UI\Assets\setup-banner.bmp" />
+        <WixVariable Id="WixUIDialogBmp" Value="UI\Assets\setup-dialog.bmp" />
+
+        <!-- install-path selection dialog -->
+        <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+
+        <UI>
+            <TextStyle Id="WixUI_Font_Emphasized" FaceName="Tahoma" Size="8" Bold="yes" />
+            <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="InstallContextDlg"
+                     Order="2" Condition="LicenseAccepted = 1" />
+            <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="InstallContextDlg" Order="2" />
+
+            <Dialog Id="InstallContextDlg" Width="370" Height="270" Title="!(loc.InstallScopeDlg_Title)">
+                <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44"
+                         TabSkip="yes" Text="!(loc.InstallScopeDlgBannerBitmap)" />
+                <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+                <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+                <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15"
+                         Transparent="yes" NoPrefix="yes" Text="!(loc.InstallScopeDlgTitle)" />
+                <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="20"
+                         Transparent="yes" NoPrefix="yes" Text="!(loc.InstallScopeDlgDescription)" />
+                <Control Id="Scope" Type="RadioButtonGroup" X="20" Y="55" Width="330" Height="120" Property="INSTALLSCOPE">
+                    <RadioButtonGroup Property="INSTALLSCOPE">
+                        <RadioButton Value="user" X="0" Y="0" Width="295" Height="16" Text="!(loc.InstallScopeDlgPerUser)" />
+                        <RadioButton Value="machine" X="0" Y="60" Width="295" Height="16" Text="!(loc.InstallScopeDlgPerMachine)" />
+                    </RadioButtonGroup>
+                </Control>
+                <Control Id="PerUserDescription" Type="Text" X="33" Y="70" Width="300" Height="36"
+                         NoPrefix="yes" Text="仅为当前用户创建快捷方式，无需管理员权限。" />
+                <Control Id="PerMachineDescription" Type="Text" X="33" Y="131" Width="300" Height="36"
+                         NoPrefix="yes" Text="为所有用户创建快捷方式，安装时需要管理员权限。" />
+                <Control Id="MachineScopeConflict" Type="Text" X="20" Y="180" Width="330" Height="38"
+                         NoPrefix="yes" Hidden="yes" Text="已安装全局版本。请先卸载，或选择“所有用户”进行升级。"
+                         ShowCondition="INSTALLSCOPE = &quot;user&quot; AND MACHINEINSTALLFOLDER"
+                         HideCondition="NOT (INSTALLSCOPE = &quot;user&quot; AND MACHINEINSTALLFOLDER)" />
+                <Control Id="UserScopeConflict" Type="Text" X="20" Y="180" Width="330" Height="38"
+                         NoPrefix="yes" Hidden="yes" Text="已安装当前用户版本。请先卸载，或选择“仅当前用户”进行升级。"
+                         ShowCondition="INSTALLSCOPE = &quot;machine&quot; AND USERINSTALLFOLDER"
+                         HideCondition="NOT (INSTALLSCOPE = &quot;machine&quot; AND USERINSTALLFOLDER)" />
+                <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+                    <Publish Event="NewDialog" Value="LicenseAgreementDlg" />
+                </Control>
+                <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)"
+                         DisableCondition="(INSTALLSCOPE = &quot;user&quot; AND MACHINEINSTALLFOLDER) OR (INSTALLSCOPE = &quot;machine&quot; AND USERINSTALLFOLDER)"
+                         EnableCondition="NOT ((INSTALLSCOPE = &quot;user&quot; AND MACHINEINSTALLFOLDER) OR (INSTALLSCOPE = &quot;machine&quot; AND USERINSTALLFOLDER))">
+                    <Publish Property="ALLUSERS" Value="{}" Order="1" Condition="INSTALLSCOPE = &quot;user&quot;" />
+                    <Publish Property="ALLUSERS" Value="1" Order="2" Condition="INSTALLSCOPE = &quot;machine&quot;" />
+                    <Publish Property="MSIINSTALLPERUSER" Value="1" Order="3" Condition="INSTALLSCOPE = &quot;user&quot;" />
+                    <Publish Property="MSIINSTALLPERUSER" Value="{}" Order="4" Condition="INSTALLSCOPE = &quot;machine&quot;" />
+                    <Publish Property="INSTALLFOLDER" Value="[USERINSTALLFOLDER]" Order="5"
+                             Condition="INSTALLSCOPE &lt;&gt; CURRENTINSTALLSCOPE AND INSTALLSCOPE = &quot;user&quot; AND USERINSTALLFOLDER" />
+                    <Publish Property="INSTALLFOLDER" Value="[LocalAppDataFolder]Programs\genshin-cleaner\" Order="6"
+                             Condition="INSTALLSCOPE &lt;&gt; CURRENTINSTALLSCOPE AND INSTALLSCOPE = &quot;user&quot; AND NOT USERINSTALLFOLDER" />
+                    <Publish Property="INSTALLFOLDER" Value="[MACHINEINSTALLFOLDER]" Order="7"
+                             Condition="INSTALLSCOPE &lt;&gt; CURRENTINSTALLSCOPE AND INSTALLSCOPE = &quot;machine&quot; AND MACHINEINSTALLFOLDER" />
+                    <Publish Property="INSTALLFOLDER" Value="[MACHINEPROGRAMFILES]\genshin-cleaner\" Order="8"
+                             Condition="INSTALLSCOPE &lt;&gt; CURRENTINSTALLSCOPE AND INSTALLSCOPE = &quot;machine&quot; AND NOT MACHINEINSTALLFOLDER" />
+                    <Publish Property="CURRENTINSTALLSCOPE" Value="[INSTALLSCOPE]" Order="9" />
+                    <Publish Event="SetTargetPath" Value="INSTALLFOLDER" Order="10" />
+                    <Publish Event="NewDialog" Value="InstallDirDlg" Order="11" />
+                </Control>
+                <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+                    <Publish Event="SpawnDialog" Value="CancelDlg" />
+                </Control>
+            </Dialog>
+
+            <Publish Dialog="BrowseDlg" Control="OK" Property="INSTALLFOLDER"
+                     Value="[INSTALLFOLDER]genshin-cleaner\" Order="2"
+                     Condition="INSTALLFOLDER ~&gt;&gt; &quot;\&quot; AND NOT (INSTALLFOLDER ~&gt;&gt; &quot;\genshin-cleaner\&quot;)" />
+            <Publish Dialog="BrowseDlg" Control="OK" Property="INSTALLFOLDER"
+                     Value="[INSTALLFOLDER]\genshin-cleaner\" Order="2"
+                     Condition="INSTALLFOLDER AND NOT (INSTALLFOLDER ~&gt;&gt; &quot;\&quot;) AND NOT (INSTALLFOLDER ~&gt;&gt; &quot;\genshin-cleaner&quot;)" />
+        </UI>
+
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="INSTALLFOLDER" Name="genshin-cleaner">
+                <Component Id="InstallLocation">
+                    <RegistryValue Root="HKMU" Key="Software\Me0wo\genshin-cleaner"
+                                   Name="InstallDir" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+                </Component>
+                <!-- harvest whole publish output; WiX auto-generates the component(s) -->
+                <Files Include="$(var.PUBLISH)\**" />
+            </Directory>
+        </StandardDirectory>
+
+        <StandardDirectory Id="ProgramMenuFolder">
+            <Directory Id="AppMenuDir" Name="genshin-cleaner">
+                <Component Id="Shortcut">
+                    <Shortcut Id="StartMenuShortcut"
+                              Name="genshin-cleaner"
+                              Description="Clean up removable Genshin Impact resources"
+                              Target="[INSTALLFOLDER]genshin-cleaner.exe"
+                              WorkingDirectory="INSTALLFOLDER" />
+                    <RemoveFolder Id="RemoveAppMenuDir" On="uninstall" />
+                    <RegistryValue Root="HKMU" Key="Software\Me0wo\genshin-cleaner"
+                                   Name="installed" Type="integer" Value="1" KeyPath="yes" />
+                </Component>
+            </Directory>
+        </StandardDirectory>
+    </Package>
+</Wix>
