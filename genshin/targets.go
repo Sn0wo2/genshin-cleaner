@@ -13,9 +13,28 @@ import (
 )
 
 type ScanRule struct {
-	Title   string                 `json:"title"`
-	Note    string                 `json:"note"`
+	Id      string                 `json:"id"`
+	Params  []string               `json:"params,omitempty"`
 	Targets map[string]fs.DirEntry `json:"targets"`
+}
+
+type CutsceneRule struct {
+	Id       string
+	Keywords []string
+}
+
+var cutsceneRules = []CutsceneRule{
+	{"cutsceneBoy", []string{"boy"}},
+	{"cutsceneGirl", []string{"girl"}},
+	{"cutsceneMondstadt", []string{"mengde", "mdaq", "venti", "wdlq", "ambor"}},
+	{"cutsceneLiyue", []string{"liyue", "lyaq", "ly_", "lq10", "lq11", "xiaopersonal", "shenhebattle", "yunjinopera"}},
+	{"cutsceneInazuma", []string{"inazuma", "daoqi", "200803", "200806", "200919", "201104", "200211", "lq12", "shougunboss", "wanyexian"}},
+	{"cutsceneSumeru", []string{"sumeru", "xm_", "lq13"}},
+	{"cutsceneFontaine", []string{"fontaine", "lq14"}},
+	{"cutsceneNatlan", []string{"natlan", "lq15"}},
+	{"cutsceneNodKrai", []string{"nodkrai", "nk_", "lq16"}},
+	{"cutsceneSnezhnaya", []string{"zd_", "aq70"}},
+	{"cutsceneEvents", []string{"battlepass", "changeweather", "eq", "fd_", "gy", "memories", "reunion", "shieldingresources"}},
 }
 
 func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
@@ -75,24 +94,33 @@ func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 		return targets
 	}
 
-	var versions []*version.Version
-	for _, entry := range entries {
-		if entry.IsDir() {
-			if ver, err := version.NewVersion(entry.Name()); err == nil {
-				versions = append(versions, ver)
-			}
-		}
+	cutscenes := make(map[string]map[string]fs.DirEntry, len(cutsceneRules)+1)
+	for _, r := range cutsceneRules {
+		cutscenes[r.Id] = make(map[string]fs.DirEntry)
 	}
-	slices.SortFunc(versions, func(a, b *version.Version) int {
-		return a.Compare(b)
-	})
+	cutscenes["cutsceneOther"] = make(map[string]fs.DirEntry)
+	for _, persistent := range []bool{false, true} {
+		cwd := filepath.Join(streaming, "VideoAssets")
+		if persistent {
+			cwd = filepath.Join(g.Data, "Persistent", "VideoAssets")
+		}
+		for path, entry := range scan(cwd, nil) {
+			name := strings.ToLower(filepath.Base(path))
+			video := strings.HasSuffix(name, ".usm") || strings.HasSuffix(name, ".usm.bak")
+			if !video && !persistent {
+				continue
+			}
 
-	var latest *version.Version
-	oldCaches := make(map[string]fs.DirEntry)
-	if len(versions) > 0 {
-		latest = versions[len(versions)-1]
-		for _, cache := range versions[:len(versions)-1] {
-			maps.Copy(oldCaches, scan(filepath.Join(webCaches, cache.String()), nil))
+			id := "cutsceneOther"
+			if video {
+				for _, r := range cutsceneRules {
+					if slices.ContainsFunc(r.Keywords, func(kw string) bool { return strings.Contains(name, kw) }) {
+						id = r.Id
+						break
+					}
+				}
+			}
+			cutscenes[id][path] = entry
 		}
 	}
 
@@ -105,48 +133,46 @@ func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 		return strings.HasSuffix(rel, ".log") && !strings.Contains(rel, "/")
 	}))
 
-	rules := []ScanRule{
-		{
-			Title:   "Cutscene videos (*.usm)",
-			Note:    "launcher re-downloads on base-resource updates",
-			Targets: scan(filepath.Join(streaming, "VideoAssets"), func(p string) bool { return strings.HasSuffix(p, ".usm") }),
-		},
-		{
-			Title:   "BeyondUGC audio",
-			Note:    "launcher re-downloads on base-resource updates",
-			Targets: scan(filepath.Join(streaming, "AudioAssets", "BeyondUGC"), nil),
-		},
-		{
-			Title:   "MusicGame audio",
-			Note:    "launcher re-downloads on base-resource updates",
-			Targets: scan(filepath.Join(streaming, "AudioAssets", "MusicGame"), nil),
-		},
-		{
-			Title:   "Persistent on-demand CGs",
-			Note:    "downloaded on demand, stays deleted",
-			Targets: scan(filepath.Join(g.Data, "Persistent", "VideoAssets"), nil),
-		},
-		{
-			Title:   "Logs & temp junk",
-			Note:    "DownloadError.log, *.log, *.tmp, *.bak",
-			Targets: logs,
-		},
-	}
+	ugc := scan(filepath.Join(streaming, "AudioAssets", "BeyondUGC"), nil)
+	maps.Copy(ugc, scan(filepath.Join(g.Data, "Persistent", "AudioAssets", "BeyondUGC"), nil))
 
-	if latest != nil {
-		rules = append(rules, ScanRule{
-			Title:   "Old webCaches versions",
-			Note:    "keeping " + latest.String(),
-			Targets: oldCaches,
-		})
+	rules := make([]ScanRule, 0, len(cutsceneRules)+5)
+	for _, r := range cutsceneRules {
+		rules = append(rules, ScanRule{Id: r.Id, Targets: cutscenes[r.Id]})
+	}
+	rules = append(rules,
+		ScanRule{Id: "beyondUgc", Targets: ugc},
+		ScanRule{Id: "musicGame", Targets: scan(filepath.Join(streaming, "AudioAssets", "MusicGame"), nil)},
+		ScanRule{Id: "logsJunk", Targets: logs},
+	)
+
+	var versions []*version.Version
+	for _, entry := range entries {
+		if entry.IsDir() {
+			if ver, err := version.NewVersion(entry.Name()); err == nil {
+				versions = append(versions, ver)
+			}
+		}
+	}
+	slices.SortFunc(versions, func(a, b *version.Version) int {
+		return a.Compare(b)
+	})
+
+	if len(versions) > 0 {
+		latest := versions[len(versions)-1]
+		oldCaches := make(map[string]fs.DirEntry)
+		for _, cache := range versions[:len(versions)-1] {
+			maps.Copy(oldCaches, scan(filepath.Join(webCaches, cache.String()), nil))
+		}
+		rules = append(rules, ScanRule{Id: "oldWebCaches", Params: []string{latest.String()}, Targets: oldCaches})
 	}
 
 	if editor {
 		rules = append(rules, ScanRule{
-			Title:   "BeyondAssistEditor (UGC editor)",
-			Note:    "restorable via beyond_pkg_version",
+			Id:      "beyondEditor",
 			Targets: scan(filepath.Join(g.Root, "BeyondAssets", "BeyondAssistEditor"), nil),
 		})
 	}
-	return rules, errs
+
+	return slices.DeleteFunc(rules, func(r ScanRule) bool { return len(r.Targets) == 0 }), errs
 }

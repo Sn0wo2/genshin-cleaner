@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+
+	"github.com/3JoB/unsafeConvert"
 )
 
 type Writer struct {
@@ -15,8 +17,10 @@ func (w *Writer) Write(p []byte) (int, error) {
 	if !w.pretty {
 		return w.dst.Write(p)
 	}
+
 	var out bytes.Buffer
-	if err := json.Indent(&out, bytes.TrimSuffix(p, []byte{'\n'}), "", "  "); err != nil {
+
+	if err := json.Indent(&out, bytes.TrimSuffix(p, unsafeConvert.ByteSlice("\n")), "", "  "); err != nil {
 		return w.dst.Write(p)
 	}
 	out.WriteByte('\n')

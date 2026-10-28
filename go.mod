@@ -1,8 +1,9 @@
 module github.com/Sn0wo2/genshin-cleaner
 
-go 1.26.0
+go 1.27.0
 
 require (
+	github.com/3JoB/unsafeConvert v1.6.0
 	github.com/Sn0wo2/caelum v0.3.0
 	github.com/hashicorp/go-version v1.9.0
 	github.com/shirou/gopsutil/v3 v3.24.5
@@ -12,20 +13,20 @@ require (
 )
 
 require (
+	github.com/akavel/rsrc v0.10.2 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
-	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
-	github.com/mattn/go-isatty v0.0.24 // indirect
+	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
+	github.com/lufia/plan9stats v0.0.0-20260802145828-341c2f0c90b5 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
+	github.com/power-devops/perfstat v0.0.0-20260805114148-88456608a4f6 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/zerolog v1.35.1 // indirect
-)
-
-require (
-	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/lufia/plan9stats v0.0.0-20260802145828-341c2f0c90b5 // indirect
-	github.com/power-devops/perfstat v0.0.0-20260805114148-88456608a4f6 // indirect
 	github.com/shoenig/go-m1cpu v0.2.2 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 )
+
+tool github.com/akavel/rsrc
