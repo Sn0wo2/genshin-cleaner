@@ -1,0 +1,117 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - contextcheck
+    - copyloopvar
+    - dogsled
+    - dupl
+    - dupword
+    - durationcheck
+    - errcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - exptostd
+    - fatcontext
+    - forcetypeassert
+    - funcorder
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    - gochecksumtype
+    - gocritic
+    - gosec
+    - gosmopolitan
+    - goprintffuncname
+    - govet
+    - inamedparam
+    - ineffassign
+    - interfacebloat
+    - iface
+    - intrange
+    - loggercheck
+    - maintidx
+    - makezero
+    - mirror
+    - misspell
+    - musttag
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - nlreturn
+    - nolintlint
+    - nosprintfhostport
+    - paralleltest
+    - perfsprint
+    - prealloc
+    - predeclared
+    - promlinter
+    - protogetter
+    - recvcheck
+    - reassign
+    - revive
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - staticcheck
+    - tagalign
+    - testableexamples
+    - testifylint
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - whitespace
+    - wsl_v5
+    - zerologlint
+
+  settings:
+    revive:
+      enable-default-rules: false
+      rules:
+        - name: var-declaration
+
+  exclusions:
+    rules:
+      - path: ^main\.go$
+        linters:
+          - maintidx
+        source: ^func main\(\)
+      - path: ^main\.go$
+        linters:
+          - gosmopolitan
+        text: string literal contains rune in Han script
+      - path: ^main\.go$
+        linters:
+          - gosec
+        text: '^G304:'
+        source: 'os.ReadFile\(filepath.Join\(miHoYoDir, entry, "output_log.txt"\)\)'
+      - path: ^stdjson[/\\]logging\.go$
+        linters:
+          - errorlint
+        text: type switch on error
+        source: 'switch pe := err.\(type\)'
+
+run:
+  concurrency: 4
+  timeout: 5m
+  modules-download-mode: readonly
+
+issues:
+  max-issues-per-linter: 0
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports

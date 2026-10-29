@@ -1,0 +1,70 @@
+version: 2
+
+builds:
+  - id: backend
+    main: .
+    binary: genshin-cleaner-backend
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+    goarch:
+      - amd64
+    goamd64:
+      - v1
+    flags:
+      - -mod=readonly
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/Sn0wo2/genshin-cleaner/stdjson.buildVersion={{.Version}}
+
+before:
+  hooks:
+    - go tool rsrc -arch amd64 -manifest backend.manifest -o rsrc_windows_amd64.syso
+    - python UI/pack.py x64 --version "{{ .Version }}" --output "dist/Installer/genshin-cleaner-{{ .Version }}-x64.msi"
+
+archives:
+  - formats:
+      - zip
+
+snapshot:
+  version_template: "{{ .Version }}-next"
+
+changelog:
+  use: github
+  groups:
+    - title: 「Features」
+      regexp: "^.*feat(?:\\([^)]+\\))?:+.*$"
+    - title: 「Bug Fixes」
+      regexp: "^.*fix(?:\\([^)]+\\))?:+.*$"
+      order: 1
+    - title: 「Performance Improvements」
+      regexp: "^.*perf(?:\\([^)]+\\))?:+.*$"
+      order: 2
+    - title: 「Documentation」
+      regexp: "^.*docs(?:\\([^)]+\\))?:+.*$"
+      order: 3
+    - title: 「Maintenance & Chores」
+      regexp: "^.*chore(?:\\([^)]+\\))?:+.*$"
+      order: 4
+    - title: 「Code Refactoring」
+      regexp: "^.*refactor(?:\\([^)]+\\))?:+.*$"
+      order: 5
+    - title: 「Tests」
+      regexp: "^.*test(?:\\([^)]+\\))?:+.*$"
+      order: 6
+    - title: 「Dependency Updates」
+      regexp: "^.*deps(?:\\([^)]+\\))?:+.*$"
+      order: 7
+    - title: 「Others」
+      order: 999
+
+release:
+  prerelease: auto
+  replace_existing_artifacts: true
+  extra_files:
+    - glob: dist/Installer/*.msi
+  header: |
+    {{ if .Prerelease }}
+    > ⚠️ **WARNING: This is a pre-release version and is not recommended for production use.**
+    {{ end }}

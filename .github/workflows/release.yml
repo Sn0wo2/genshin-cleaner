@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      snapshot:
+        description: Build a snapshot without publishing
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: release-${{ inputs.snapshot && 'snapshot' || 'publish' }}-${{ github.ref }}
+  cancel-in-progress: ${{ inputs.snapshot == true }}
+
+jobs:
+  check-release:
+    if: github.ref_type == 'tag' && !inputs.snapshot
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      skip: ${{ steps.release.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check for an already published release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/check-release.js
+
+      - name: Reuse CI checks for this commit
+        if: steps.release.outputs.skip != 'true'
+        timeout-minutes: 15
+        uses: lewagon/wait-on-check-action@v1.9.1
+        with:
+          ref: ${{ github.sha }}
+          check-name: Checks
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          allowed-conclusions: success
+
+  snapshot:
+    if: inputs.snapshot
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install WiX
+        run: |
+          dotnet tool install --global wix --version 7.0.0
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Install WiX UI extension
+        run: wix extension add WixToolset.UI.wixext/7.0.0
+
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          args: release --clean --snapshot
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: release-snapshot
+          path: |
+            dist/*.zip
+            dist/Installer/*.msi
+            dist/*checksums.txt
+            dist/artifacts.json
+            dist/metadata.json
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    needs: check-release
+    if: >-
+      github.ref_type == 'tag' && !inputs.snapshot &&
+      needs.check-release.outputs.skip != 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install WiX
+        run: |
+          dotnet tool install --global wix --version 7.0.0
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Install WiX UI extension
+        run: wix extension add WixToolset.UI.wixext/7.0.0
+
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
