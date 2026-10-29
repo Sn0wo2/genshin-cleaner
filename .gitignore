@@ -1,6 +1,20 @@
 /dist/
 /genshin-cleaner
-/genshin-cleaner.exe
+
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.*
+!coverage.go
+*.coverprofile
+profile.cov
+go.work
+go.work.sum
+.env
 
 # WinUI / .NET build and IDE output
 /UI/**/[Bb]in/
