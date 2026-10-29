@@ -14,23 +14,28 @@ const (
 
 func Stub(path string) error {
 	_ = Unstub(path)
-	if err := os.WriteFile(path, nil, 0o666); err != nil {
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		return err
 	}
+
 	sd, err := windows.SecurityDescriptorFromString(denyDaclSDDL)
 	if err != nil {
 		return err
 	}
+
 	dacl, _, err := sd.DACL()
 	if err != nil {
 		return err
 	}
+
 	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, daclInfo, nil, nil, dacl, nil); err != nil {
 		return err
 	}
+
 	if attrs, err := windows.GetFileAttributes(windows.StringToUTF16Ptr(path)); err == nil {
 		_ = windows.SetFileAttributes(windows.StringToUTF16Ptr(path), attrs|windows.FILE_ATTRIBUTE_READONLY)
 	}
+
 	return nil
 }
 
@@ -39,16 +44,20 @@ func Unstub(path string) error {
 	if err != nil {
 		return err
 	}
+
 	dacl, _, err := parent.DACL()
 	if err != nil {
 		return err
 	}
+
 	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, daclInfo, nil, nil, dacl, nil); err != nil {
 		return err
 	}
+
 	attrs, err := windows.GetFileAttributes(windows.StringToUTF16Ptr(path))
 	if err != nil {
 		return err
 	}
+
 	return windows.SetFileAttributes(windows.StringToUTF16Ptr(path), attrs&^windows.FILE_ATTRIBUTE_READONLY)
 }

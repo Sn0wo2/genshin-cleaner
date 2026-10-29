@@ -64,10 +64,12 @@ func (e ErrorList) MarshalJSON() ([]byte, error) {
 	if e.Err == nil {
 		return []byte("null"), nil
 	}
+
 	errs := []error{e.Err}
 	if joined, ok := e.Err.(interface{ Unwrap() []error }); ok {
 		errs = joined.Unwrap()
 	}
+
 	out := make([]Failure, 0, len(errs))
 	for _, err := range errs {
 		f := Failure{Reason: err.Error()}
@@ -77,8 +79,10 @@ func (e ErrorList) MarshalJSON() ([]byte, error) {
 		case *fs.PathError:
 			f.Path, f.Reason = pe.Path, pe.Err.Error()
 		}
+
 		out = append(out, f)
 	}
+
 	return json.Marshal(out)
 }
 
@@ -134,6 +138,7 @@ func newErrorList(err error) *ErrorList {
 	if err == nil {
 		return nil
 	}
+
 	return &ErrorList{Err: err}
 }
 
@@ -154,6 +159,7 @@ func Init(debugging bool) {
 				return slog.Int("status", int(lv))
 			}
 		}
+
 		return a
 	}}
 	caelumOut = caelum.New(caelum.Config{
@@ -183,6 +189,7 @@ func Log[T any](s Status, msg string, data T) {
 	if s == StatusLogDebug && !debug {
 		return
 	}
+
 	caelumErr.Log(context.Background(), slog.Level(s), msg, slog.Any("data", data))
 }
 

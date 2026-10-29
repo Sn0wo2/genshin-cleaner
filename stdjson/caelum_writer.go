@@ -23,9 +23,12 @@ func (w *Writer) Write(p []byte) (int, error) {
 	if err := json.Indent(&out, bytes.TrimSuffix(p, unsafeConvert.ByteSlice("\n")), "", "  "); err != nil {
 		return w.dst.Write(p)
 	}
+
 	out.WriteByte('\n')
+
 	if _, err := w.dst.Write(out.Bytes()); err != nil {
 		return 0, err
 	}
+
 	return len(p), nil
 }

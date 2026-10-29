@@ -49,6 +49,7 @@ func main() {
 	stdjson.Init(opts.debug)
 
 	var dir string
+
 	if args := pflag.Args(); len(args) > 1 {
 		stdjson.Result(stdjson.StatusResultFailed, "too many arguments, pass one game dir", stdjson.NoData())
 		os.Exit(1)
@@ -60,18 +61,22 @@ func main() {
 		stdjson.Result(stdjson.StatusResultFailed, "unsupported protocol version", stdjson.NoData())
 		os.Exit(1)
 	}
+
 	var actions int
+
 	for _, on := range []bool{opts.list, opts.delete, opts.stub, opts.unstub, opts.stubs} {
 		if on {
 			actions++
 		}
 	}
+
 	if actions > 1 {
 		stdjson.Result(stdjson.StatusResultFailed, "--list, --delete, --stub and --unstub are mutually exclusive", stdjson.NoData())
 		os.Exit(1)
 	}
 
 	var sel genshin.Selection
+
 	switch {
 	case opts.selectionFile != "":
 		data, err := os.ReadFile(opts.selectionFile)
@@ -79,6 +84,7 @@ func main() {
 			stdjson.Result(stdjson.StatusResultFailed, "read selection: "+err.Error(), stdjson.NoData())
 			os.Exit(1)
 		}
+
 		if len(strings.TrimSpace(unsafeConvert.StringSlice(data))) > 0 {
 			if err := json.Unmarshal(data, &sel); err != nil {
 				stdjson.Result(stdjson.StatusResultFailed, "read selection: "+err.Error(), stdjson.NoData())
@@ -91,6 +97,7 @@ func main() {
 			stdjson.Result(stdjson.StatusResultFailed, "read selection: "+err.Error(), stdjson.NoData())
 			os.Exit(1)
 		}
+
 		if len(strings.TrimSpace(string(data))) > 0 {
 			if err := json.Unmarshal(data, &sel); err != nil {
 				stdjson.Result(stdjson.StatusResultFailed, "read selection: "+err.Error(), stdjson.NoData())
@@ -99,23 +106,29 @@ func main() {
 		}
 	}
 
-	var games []genshin.Genshin
-	var failed error
+	var (
+		games  []genshin.Genshin
+		failed error
+	)
 
 	if dir != "" {
 		stdjson.Log(stdjson.StatusLogInfo, "scanning genshin dir: "+dir, stdjson.StageData(stdjson.StageScan))
+
 		var err error
+
 		games, err = genshin.DiscoverGenshins(dir)
 		if err != nil {
 			if len(games) == 0 {
 				stdjson.Result(stdjson.StatusResultFailed, err.Error(), stdjson.NoData())
 				os.Exit(1)
 			}
+
 			failed = err
 			stdjson.Log(stdjson.StatusLogWarn, err.Error(), stdjson.NoData())
 		}
 	} else {
 		stdjson.Log(stdjson.StatusLogInfo, "scanning registry for genshin installs", stdjson.StageData(stdjson.StageScan))
+
 		for _, subkey := range []string{
 			`Software\miHoYo\HYP\1_1\hk4e_cn`,
 			`Software\Cognosphere\HYP\1_0\hk4e_global`,
@@ -127,7 +140,8 @@ func main() {
 			}
 
 			value, _, err := k.GetStringValue("GameInstallPath")
-			k.Close()
+			_ = k.Close()
+
 			if err != nil || value == "" {
 				continue
 			}
@@ -145,6 +159,7 @@ func main() {
 
 		if len(games) == 0 {
 			stdjson.Log(stdjson.StatusLogInfo, "scanning genshin logs in LocalLow", stdjson.StageData(stdjson.StageScan))
+
 			home, _ := os.UserHomeDir()
 			miHoYoDir := filepath.Join(home, "AppData", "LocalLow", "miHoYo")
 			logSeen := map[string]struct{}{}
@@ -156,10 +171,11 @@ func main() {
 					continue
 				}
 
-				data, err := os.ReadFile(filepath.Join(miHoYoDir, entryDir.Name(), "output_log.txt"))
+				data, err := os.ReadFile(filepath.Join(miHoYoDir, entry, "output_log.txt"))
 				if err != nil {
 					failed = errors.Join(failed, err)
 					stdjson.Log(stdjson.StatusLogWarn, err.Error(), stdjson.NoData())
+
 					continue
 				}
 
@@ -168,6 +184,7 @@ func main() {
 					if _, ok := logSeen[root]; ok {
 						continue
 					}
+
 					logSeen[root] = struct{}{}
 
 					if g, err := genshin.InspectGenshin(root); err == nil {
@@ -181,16 +198,19 @@ func main() {
 
 			if len(games) == 0 {
 				stdjson.Log(stdjson.StatusLogWarn, "no genshin found, scanning all drives", stdjson.StageData(stdjson.StageScan))
+
 				for letter := 'A'; letter <= 'Z'; letter++ {
 					root := string(letter) + `:\`
 					if _, err := os.Stat(root); err != nil {
 						continue
 					}
+
 					found, err := genshin.DiscoverGenshins(root)
 					if err != nil {
 						failed = errors.Join(failed, err)
 						stdjson.Log(stdjson.StatusLogWarn, err.Error(), stdjson.NoData())
 					}
+
 					games = append(games, found...)
 				}
 			}
@@ -203,7 +223,9 @@ func main() {
 		if _, ok := seen[key]; ok {
 			return true
 		}
+
 		seen[key] = struct{}{}
+
 		return false
 	})
 
@@ -212,10 +234,13 @@ func main() {
 		if failed != nil {
 			status = stdjson.StatusResultPartial
 		}
+
 		stdjson.Result(status, "listed detected genshin installs", stdjson.NewListData(games, failed))
+
 		if failed != nil {
 			os.Exit(2)
 		}
+
 		return
 	}
 
@@ -223,11 +248,13 @@ func main() {
 		stdjson.Result(stdjson.StatusResultFailed, "genshin not found, pass the game dir (or its parent)", stdjson.NoData())
 		os.Exit(1)
 	}
+
 	if len(games) > 1 {
 		stdjson.Result(stdjson.StatusResultFailed, "multiple genshin installs found, pass one game dir",
 			stdjson.NewListData(games, failed))
 		os.Exit(1)
 	}
+
 	g := games[0]
 
 	rules, err := genshin.CollectRules(g, opts.editor)
@@ -235,46 +262,59 @@ func main() {
 		stdjson.Result(stdjson.StatusResultFailed, "failed to scan cleanup targets: "+err.Error(), stdjson.NoData())
 		os.Exit(1)
 	}
+
 	rules = sel.Apply(rules)
+
 	if err != nil {
 		failed = errors.Join(failed, err)
 		stdjson.Log(stdjson.StatusLogWarn, err.Error(), stdjson.NoData())
 	}
 
 	var total int64
+
 	rulesOut := make([]stdjson.Rule, 0, len(rules))
 	count := 0
+
 	for _, r := range rules {
 		targets := make([]stdjson.Target, 0, len(r.Targets))
 		for p, t := range r.Targets {
 			target := stdjson.Target{Path: p}
+
 			if info, err := t.Info(); err == nil {
 				size := info.Size()
+
 				target.SizeBytes = &size
 				if opts.stubs == (size != 0) {
 					continue
 				}
+
 				total += size
 			} else {
 				if opts.stubs {
 					continue
 				}
+
 				failed = errors.Join(failed, &stdjson.PathError{Path: p, Reason: err.Error()})
 			}
+
 			targets = append(targets, target)
 		}
+
 		count += len(targets)
 		slices.SortFunc(targets, func(a, b stdjson.Target) int {
 			sa, sb := int64(0), int64(0)
 			if a.SizeBytes != nil {
 				sa = *a.SizeBytes
 			}
+
 			if b.SizeBytes != nil {
 				sb = *b.SizeBytes
 			}
+
 			if sa != sb {
 				return cmp.Compare(sb, sa)
 			}
+
 			return strings.Compare(a.Path, b.Path)
 		})
 		rulesOut = append(rulesOut, stdjson.Rule{Id: r.Id, Params: r.Params, Targets: targets})
@@ -287,11 +327,13 @@ func main() {
 					n += *t.SizeBytes
 				}
 			}
+
 			return n
 		}
 		if sa, sb := size(a), size(b); sa != sb {
 			return cmp.Compare(sb, sa)
 		}
+
 		return strings.Compare(a.Id, b.Id)
 	})
 
@@ -305,11 +347,14 @@ func main() {
 		if opts.stubs {
 			stage, msg = stdjson.StageStubScan, "stub scan: locked stub files"
 		}
+
 		stdjson.Result(status, msg,
 			stdjson.NewDryRunData(g, stage, count, total, rulesOut, failed))
+
 		if failed != nil {
 			os.Exit(2)
 		}
+
 		return
 	}
 
@@ -318,8 +363,10 @@ func main() {
 		stdjson.Result(stdjson.StatusResultFailed, "failed to check running processes: "+err.Error(), stdjson.NoData())
 		os.Exit(1)
 	}
+
 	for _, proc := range processes {
 		name, _ := proc.Name()
+
 		name = strings.ReplaceAll(strings.ToLower(name), " ", "")
 		if strings.Contains(name, "yuanshen") || strings.Contains(name, "genshinimpact") {
 			stdjson.Result(stdjson.StatusResultFailed, "genshin is running, close it before cleaning", stdjson.NoData())
@@ -328,13 +375,17 @@ func main() {
 	}
 
 	var freed int64
+
 	done := 0
+
 	for _, r := range rulesOut {
 		for _, t := range r.Targets {
 			if t.SizeBytes == nil {
 				continue
 			}
+
 			var err error
+
 			switch {
 			case opts.stub:
 				if err = genshin.Stub(t.Path); err == nil {
@@ -347,6 +398,7 @@ func main() {
 					freed += *t.SizeBytes
 				}
 			}
+
 			if err != nil {
 				failed = errors.Join(failed, &stdjson.PathError{Path: t.Path, Reason: err.Error()})
 			} else {
@@ -368,6 +420,7 @@ func main() {
 
 	stdjson.Result(status, msg,
 		stdjson.NewDeleteData(g, stage, count, total, done, freed, failed))
+
 	if failed != nil {
 		os.Exit(2)
 	}

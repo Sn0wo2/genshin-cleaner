@@ -38,13 +38,18 @@ var skip = map[string]struct{}{
 }
 
 func DiscoverGenshins(root string) ([]Genshin, error) {
-	var games []Genshin
-	var errs error
-	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	var (
+		games []Genshin
+		errs  error
+	)
+
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			errs = errors.Join(errs, err)
+
 			return nil
 		}
+
 		if !d.IsDir() || path == root {
 			return nil
 		}
@@ -60,13 +65,16 @@ func DiscoverGenshins(root string) ([]Genshin, error) {
 		if d.Name() != "YuanShen_Data" && d.Name() != "GenshinImpact_Data" { // YuanShen_Data | GenshinImpact_Data
 			return nil
 		}
+
 		if info, err := os.Stat(filepath.Join(path, "StreamingAssets")); err == nil && info.IsDir() {
 			if g, err := InspectGenshin(filepath.Dir(path)); err == nil {
 				games = append(games, g)
 			}
 		}
+
 		return nil
 	})
+
 	return games, errs
 }
 
@@ -113,5 +121,6 @@ func InspectGenshin(root string) (Genshin, error) {
 		// game_biz前面就判空了, 所以不需要cmp.Or
 		return Genshin{Root: absolute, Data: data, Biz: config["game_biz"], Ver: cmp.Or(config["game_version"], "%UNKNOWN%")}, nil
 	}
+
 	return Genshin{}, fmt.Errorf("%s: not found Genshin", absolute)
 }
