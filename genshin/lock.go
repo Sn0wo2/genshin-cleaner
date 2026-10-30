@@ -7,18 +7,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const (
-	denyDaclSDDL = "D:(D;;0x00010116;;;WD)"
-	daclInfo     = windows.DACL_SECURITY_INFORMATION | windows.UNPROTECTED_DACL_SECURITY_INFORMATION
-)
-
 func Stub(path string) error {
 	_ = Unstub(path)
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		return err
 	}
 
-	sd, err := windows.SecurityDescriptorFromString(denyDaclSDDL)
+	sd, err := windows.SecurityDescriptorFromString("D:(D;;0x00010116;;;WD)")
 	if err != nil {
 		return err
 	}
@@ -28,7 +23,9 @@ func Stub(path string) error {
 		return err
 	}
 
-	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, daclInfo, nil, nil, dacl, nil); err != nil {
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.UNPROTECTED_DACL_SECURITY_INFORMATION,
+		nil, nil, dacl, nil); err != nil {
 		return err
 	}
 
@@ -50,7 +47,9 @@ func Unstub(path string) error {
 		return err
 	}
 
-	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, daclInfo, nil, nil, dacl, nil); err != nil {
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.UNPROTECTED_DACL_SECURITY_INFORMATION,
+		nil, nil, dacl, nil); err != nil {
 		return err
 	}
 

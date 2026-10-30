@@ -12,31 +12,6 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-var skip = map[string]struct{}{
-	"windows":                   {},
-	"$recycle.bin":              {},
-	"system volume information": {},
-	"recovery":                  {},
-	"$sysreset":                 {},
-	"msocache":                  {},
-	"perflogs":                  {},
-	"temp":                      {},
-	"intel":                     {},
-	"amd":                       {},
-	"nvidia":                    {},
-	"scoop":                     {},
-	"chocolatey":                {},
-	"windowsapps":               {},
-	"programdata":               {},
-	"msvc":                      {},
-	"msvcshared":                {},
-	"node_modules":              {},
-	".git":                      {},
-	"venv":                      {},
-	".venv":                     {},
-	"target":                    {},
-}
-
 func DiscoverGenshins(root string) ([]Genshin, error) {
 	var (
 		games []Genshin
@@ -54,7 +29,11 @@ func DiscoverGenshins(root string) ([]Genshin, error) {
 			return nil
 		}
 
-		if _, ok := skip[strings.ToLower(d.Name())]; ok { // O(1) 跳跳跳
+		switch strings.ToLower(d.Name()) {
+		case "windows", "$recycle.bin", "system volume information", "recovery",
+			"$sysreset", "msocache", "perflogs", "temp", "intel", "amd", "nvidia",
+			"scoop", "chocolatey", "windowsapps", "programdata", "msvc", "msvcshared",
+			"node_modules", ".git", "venv", ".venv", "target":
 			return filepath.SkipDir
 		}
 

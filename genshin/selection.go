@@ -16,10 +16,8 @@ func (s Selection) Apply(rules []ScanRule) []ScanRule {
 		if s.Keep != nil || s.Drop != nil {
 			targets := make(map[string]fs.DirEntry, len(r.Targets))
 			for path, entry := range r.Targets {
-				kept := s.Keep == nil || slices.Contains(*s.Keep, r.Id) || slices.Contains(*s.Keep, path)
-
-				dropped := s.Drop != nil && (slices.Contains(*s.Drop, r.Id) || slices.Contains(*s.Drop, path))
-				if kept && !dropped {
+				if (s.Keep == nil || slices.Contains(*s.Keep, r.Id) || slices.Contains(*s.Keep, path)) &&
+					(s.Drop == nil || !slices.Contains(*s.Drop, r.Id) && !slices.Contains(*s.Drop, path)) {
 					targets[path] = entry
 				}
 			}
