@@ -1,7 +1,6 @@
 package genshin
 
 import (
-	"errors"
 	"io/fs"
 	"maps"
 	"os"
@@ -9,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Sn0wo2/genshin-cleaner/utils"
 	"github.com/hashicorp/go-version"
 )
 
@@ -54,53 +54,7 @@ func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 		}
 	}
 
-	var errs error
-
-	scan := func(cwd string, match func(rel string) bool) map[string]fs.DirEntry {
-		targets := make(map[string]fs.DirEntry)
-
-		info, err := os.Lstat(cwd)
-		if err != nil {
-			if !errors.Is(err, fs.ErrNotExist) {
-				errs = errors.Join(errs, err)
-			}
-
-			return targets
-		}
-
-		if info.Mode()&os.ModeSymlink != 0 {
-			return targets
-		}
-
-		_ = filepath.WalkDir(cwd, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				errs = errors.Join(errs, err)
-
-				return nil
-			}
-
-			if d.IsDir() {
-				return nil
-			}
-
-			rel, err := filepath.Rel(cwd, path)
-			if err != nil {
-				errs = errors.Join(errs, err)
-
-				return nil
-			}
-
-			if match != nil && !match(filepath.ToSlash(rel)) {
-				return nil
-			}
-
-			targets[path] = d
-
-			return nil
-		})
-
-		return targets
-	}
+	scanner := utils.FileScanner{}
 
 	cutscenes := make(map[string]map[string]fs.DirEntry, len(cutsceneRules)+1)
 	for _, r := range cutsceneRules {
@@ -115,7 +69,7 @@ func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 			cwd = filepath.Join(g.Data, "Persistent", "VideoAssets")
 		}
 
-		for path, entry := range scan(cwd, nil) {
+		for path, entry := range scanner.Scan(cwd, nil) {
 			name := strings.ToLower(filepath.Base(path))
 
 			video := strings.HasSuffix(name, ".usm") || strings.HasSuffix(name, ".usm.bak")
@@ -139,19 +93,19 @@ func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 		}
 	}
 
-	logs := scan(g.Data, func(rel string) bool {
+	logs := scanner.Scan(g.Data, func(rel string) bool {
 		rel = strings.ToLower(rel)
 
 		return rel == "persistent/downloaderror.log" || strings.HasSuffix(rel, ".tmp") || strings.HasSuffix(rel, ".bak")
 	})
-	maps.Copy(logs, scan(g.Root, func(rel string) bool {
+	maps.Copy(logs, scanner.Scan(g.Root, func(rel string) bool {
 		rel = strings.ToLower(rel)
 
 		return strings.HasSuffix(rel, ".log") && !strings.Contains(rel, "/")
 	}))
 
-	ugc := scan(filepath.Join(streaming, "AudioAssets", "BeyondUGC"), nil)
-	maps.Copy(ugc, scan(filepath.Join(g.Data, "Persistent", "AudioAssets", "BeyondUGC"), nil))
+	ugc := scanner.Scan(filepath.Join(streaming, "AudioAssets", "BeyondUGC"), nil)
+	maps.Copy(ugc, scanner.Scan(filepath.Join(g.Data, "Persistent", "AudioAssets", "BeyondUGC"), nil))
 
 	rules := make([]ScanRule, 0, len(cutsceneRules)+5)
 	for _, r := range cutsceneRules {
@@ -160,7 +114,7 @@ func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 
 	rules = append(rules,
 		ScanRule{Id: "beyondUgc", Targets: ugc},
-		ScanRule{Id: "musicGame", Targets: scan(filepath.Join(streaming, "AudioAssets", "MusicGame"), nil)},
+		ScanRule{Id: "musicGame", Targets: scanner.Scan(filepath.Join(streaming, "AudioAssets", "MusicGame"), nil)},
 		ScanRule{Id: "logsJunk", Targets: logs},
 	)
 
@@ -174,27 +128,23 @@ func CollectRules(g Genshin, editor bool) ([]ScanRule, error) {
 		}
 	}
 
-	slices.SortFunc(versions, func(a, b *version.Version) int {
-		return a.Compare(b)
-	})
+	slices.SortFunc(versions, (*version.Version).Compare)
 
 	if len(versions) > 0 {
-		latest := versions[len(versions)-1]
-
 		oldCaches := make(map[string]fs.DirEntry)
 		for _, cache := range versions[:len(versions)-1] {
-			maps.Copy(oldCaches, scan(filepath.Join(webCaches, cache.String()), nil))
+			maps.Copy(oldCaches, scanner.Scan(filepath.Join(webCaches, cache.String()), nil))
 		}
 
-		rules = append(rules, ScanRule{Id: "oldWebCaches", Params: []string{latest.String()}, Targets: oldCaches})
+		rules = append(rules, ScanRule{Id: "oldWebCaches", Params: []string{versions[len(versions)-1].String()}, Targets: oldCaches})
 	}
 
 	if editor {
 		rules = append(rules, ScanRule{
 			Id:      "beyondEditor",
-			Targets: scan(filepath.Join(g.Root, "BeyondAssets", "BeyondAssistEditor"), nil),
+			Targets: scanner.Scan(filepath.Join(g.Root, "BeyondAssets", "BeyondAssistEditor"), nil),
 		})
 	}
 
-	return slices.DeleteFunc(rules, func(r ScanRule) bool { return len(r.Targets) == 0 }), errs
+	return slices.DeleteFunc(rules, func(r ScanRule) bool { return len(r.Targets) == 0 }), scanner.Err
 }
