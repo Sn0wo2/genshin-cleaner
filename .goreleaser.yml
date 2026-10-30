@@ -21,7 +21,7 @@ builds:
 before:
   hooks:
     - go tool rsrc -arch amd64 -manifest backend.manifest -o rsrc_windows_amd64.syso
-    - python UI/pack.py x64 --version "{{ .Version }}" --output "dist/Installer/genshin-cleaner-{{ .Version }}-x64.msi"
+    - node UI/pack.js x64 --version "{{ .Version }}" --output "dist/Installer/genshin-cleaner-{{ .Version }}-x64.msi"
 
 archives:
   - formats:

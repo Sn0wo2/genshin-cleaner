@@ -1,6 +1,6 @@
 module github.com/Sn0wo2/genshin-cleaner
 
-go 1.27.0
+go 1.27.3
 
 require (
 	github.com/3JoB/unsafeConvert v1.6.0
