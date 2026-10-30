@@ -48,7 +48,7 @@ func main() {
 	pflag.Parse()
 	stdjson.Init(opts.debug)
 
-	var dir string
+	dir := ""
 
 	if args := pflag.Args(); len(args) > 1 {
 		stdjson.Result(stdjson.StatusResultFailed, "too many arguments, pass one game dir", stdjson.NoData())
@@ -62,7 +62,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	var actions int
+	actions := 0
 
 	for _, on := range []bool{opts.list, opts.delete, opts.stub, opts.unstub, opts.stubs} {
 		if on {
@@ -75,7 +75,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	var sel genshin.Selection
+	sel := genshin.Selection{}
 
 	switch {
 	case opts.selectionFile != "":
@@ -218,7 +218,7 @@ func main() {
 	}
 
 	seen := map[string]struct{}{}
-	games = slices.DeleteFunc(slices.Clone(games), func(g genshin.Genshin) bool {
+	games = slices.DeleteFunc(games, func(g genshin.Genshin) bool {
 		key := strings.ToLower(g.Root)
 		if _, ok := seen[key]; ok {
 			return true
@@ -255,9 +255,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	g := games[0]
-
-	rules, err := genshin.CollectRules(g, opts.editor)
+	rules, err := genshin.CollectRules(games[0], opts.editor)
 	if err != nil && (opts.delete || rules == nil) {
 		stdjson.Result(stdjson.StatusResultFailed, "failed to scan cleanup targets: "+err.Error(), stdjson.NoData())
 		os.Exit(1)
@@ -270,8 +268,7 @@ func main() {
 		stdjson.Log(stdjson.StatusLogWarn, err.Error(), stdjson.NoData())
 	}
 
-	var total int64
-
+	total := int64(0)
 	rulesOut := make([]stdjson.Rule, 0, len(rules))
 	count := 0
 
@@ -321,17 +318,18 @@ func main() {
 	}
 
 	slices.SortFunc(rulesOut, func(a, b stdjson.Rule) int {
-		size := func(r stdjson.Rule) (n int64) {
+		sizes := [2]int64{}
+
+		for i, r := range []stdjson.Rule{a, b} {
 			for _, t := range r.Targets {
 				if t.SizeBytes != nil {
-					n += *t.SizeBytes
+					sizes[i] += *t.SizeBytes
 				}
 			}
-
-			return n
 		}
-		if sa, sb := size(a), size(b); sa != sb {
-			return cmp.Compare(sb, sa)
+
+		if sizes[0] != sizes[1] {
+			return cmp.Compare(sizes[1], sizes[0])
 		}
 
 		return strings.Compare(a.Id, b.Id)
@@ -349,7 +347,7 @@ func main() {
 		}
 
 		stdjson.Result(status, msg,
-			stdjson.NewDryRunData(g, stage, count, total, rulesOut, failed))
+			stdjson.NewDryRunData(games[0], stage, count, total, rulesOut, failed))
 
 		if failed != nil {
 			os.Exit(2)
@@ -374,8 +372,7 @@ func main() {
 		}
 	}
 
-	var freed int64
-
+	freed := int64(0)
 	done := 0
 
 	for _, r := range rulesOut {
@@ -419,7 +416,7 @@ func main() {
 	}
 
 	stdjson.Result(status, msg,
-		stdjson.NewDeleteData(g, stage, count, total, done, freed, failed))
+		stdjson.NewDeleteData(games[0], stage, count, total, done, freed, failed))
 
 	if failed != nil {
 		os.Exit(2)
