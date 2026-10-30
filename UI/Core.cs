@@ -1,11 +1,10 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CliWrap;
-using System.Diagnostics;
 using Microsoft.UI.Xaml;
 
 namespace UI;
@@ -30,31 +29,60 @@ public static class L
                     if (root.ValueKind != JsonValueKind.Object ||
                         !root.TryGetProperty("locale", out var localeEl) ||
                         localeEl.GetString() is not { } locale ||
-                        !_packs.TryAdd(locale, ReadStrings(root)))
+                        _packs.ContainsKey(locale))
                         continue;
 
-                    var name = root.TryGetProperty("name", out var nameEl) &&
-                               nameEl.ValueKind == JsonValueKind.String
-                        ? nameEl.GetString()!
-                        : locale;
-                    _languages.Add(new Language(locale, name));
+                    var strings = new Dictionary<string, string>();
+                    if (root.TryGetProperty("strings", out var stringsEl) &&
+                        stringsEl.ValueKind == JsonValueKind.Object)
+                        foreach (var property in stringsEl.EnumerateObject())
+                            if (property.Value.ValueKind == JsonValueKind.String)
+                                strings[property.Name] = property.Value.GetString()!;
+
+                    _packs.Add(locale, strings);
+                    _languages.Add(new Language(locale,
+                        root.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String
+                            ? nameEl.GetString()!
+                            : locale));
                 }
                 catch
                 {
                 }
 
-        CurrentLocale = PickInitial();
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "GenshinCleaner", "settings.json")));
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("language", out var languageEl) &&
+                languageEl.ValueKind == JsonValueKind.String &&
+                languageEl.GetString() is { } saved &&
+                _packs.TryGetValue(saved, out var savedPack))
+            {
+                CurrentLocale = saved;
+                _current = savedPack;
+                return;
+            }
+        }
+        catch
+        {
+        }
+
+        var system = CultureInfo.CurrentUICulture.Name;
+        var languagePrefix = system.Split('-')[0] + "-";
+        CurrentLocale = _packs.ContainsKey(system)
+            ? system
+            : _languages.FirstOrDefault(l =>
+                  l.Locale.StartsWith(languagePrefix, StringComparison.OrdinalIgnoreCase))?.Locale ??
+              (_packs.ContainsKey(FallbackLocale)
+                  ? FallbackLocale
+                  : _languages.FirstOrDefault()?.Locale ?? FallbackLocale);
         if (_packs.TryGetValue(CurrentLocale, out var pack)) _current = pack;
     }
 
     public static string CurrentLocale { get; private set; } = FallbackLocale;
-    public static IReadOnlyList<Language> Languages { get; private set; } = _languages;
-
-    private static CultureInfo Culture => _culture ??= CreateCulture();
-
-    private static string SettingsPath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "GenshinCleaner", "settings.json");
+    public static IReadOnlyList<Language> Languages { get; } = _languages;
 
     public static event EventHandler? LanguageChanged;
 
@@ -65,106 +93,43 @@ public static class L
         _current = pack;
         CurrentLocale = locale;
         _culture = null;
-        SaveLanguage(locale);
+        try
+        {
+            var settingsPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "GenshinCleaner", "settings.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+            File.WriteAllText(settingsPath, JsonSerializer.Serialize(new { language = locale }));
+        }
+        catch
+        {
+        }
+
         LanguageChanged?.Invoke(null, EventArgs.Empty);
         Loc.Instance.Refresh();
     }
 
     public static string Text(string key)
     {
-        return TryGet(key) ?? key;
+        if (_current.TryGetValue(key, out var value)) return value;
+        return _packs.TryGetValue(FallbackLocale, out var fallback) && fallback.TryGetValue(key, out var text)
+            ? text
+            : key;
     }
 
     public static string Format(string key, params object?[] args)
     {
-        var text = TryGet(key) ?? key;
-        return args.Length == 0 ? text : string.Format(Culture, text, args);
+        var text = Text(key);
+        return args.Length == 0 ? text : string.Format(_culture ??= Utils.GetCulture(CurrentLocale), text, args);
     }
 
     public static string Rule(string id, string kind, params object?[] args)
     {
-        var text = TryGet($"rules.{id}.{kind}");
-        if (text is null) return kind == "note" ? "" : id;
-        return args.Length == 0 ? text : string.Format(Culture, text, args);
-    }
-
-    private static CultureInfo CreateCulture()
-    {
-        try
-        {
-            return CultureInfo.GetCultureInfo(CurrentLocale);
-        }
-        catch (CultureNotFoundException)
-        {
-            return CultureInfo.InvariantCulture;
-        }
-    }
-
-    private static string? TryGet(string key)
-    {
-        if (_current.TryGetValue(key, out var value)) return value;
-        return _packs.TryGetValue(FallbackLocale, out var fallback) &&
-               fallback.TryGetValue(key, out var text)
-            ? text
-            : null;
-    }
-
-    private static Dictionary<string, string> ReadStrings(JsonElement root)
-    {
-        var strings = new Dictionary<string, string>();
-        if (root.TryGetProperty("strings", out var el) && el.ValueKind == JsonValueKind.Object)
-            foreach (var property in el.EnumerateObject())
-                if (property.Value.ValueKind == JsonValueKind.String)
-                    strings[property.Name] = property.Value.GetString()!;
-
-        return strings;
-    }
-
-    private static string PickInitial()
-    {
-        var saved = ReadSavedLanguage();
-        if (saved is not null && _packs.ContainsKey(saved)) return saved;
-
-        var system = CultureInfo.CurrentUICulture.Name;
-        if (_packs.ContainsKey(system)) return system;
-
-        var language = system.Split('-')[0];
-        var match = _languages.FirstOrDefault(l =>
-            l.Locale.StartsWith(language + "-", StringComparison.OrdinalIgnoreCase));
-        if (match is not null) return match.Locale;
-
-        return _packs.ContainsKey(FallbackLocale)
-            ? FallbackLocale
-            : _languages.FirstOrDefault()?.Locale ?? FallbackLocale;
-    }
-
-    private static string? ReadSavedLanguage()
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(File.ReadAllText(SettingsPath));
-            return doc.RootElement.ValueKind == JsonValueKind.Object &&
-                   doc.RootElement.TryGetProperty("language", out var el) &&
-                   el.ValueKind == JsonValueKind.String
-                ? el.GetString()
-                : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static void SaveLanguage(string locale)
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new { language = locale }));
-        }
-        catch
-        {
-        }
+        var key = $"rules.{id}.{kind}";
+        if (!_current.TryGetValue(key, out var text) &&
+            (!_packs.TryGetValue(FallbackLocale, out var fallback) || !fallback.TryGetValue(key, out text)))
+            return kind == "note" ? "" : id;
+        return args.Length == 0 ? text : string.Format(_culture ??= Utils.GetCulture(CurrentLocale), text, args);
     }
 
     public sealed record Language(string Locale, string Name);
@@ -225,22 +190,20 @@ public sealed class Backend(string exePath)
         Result? result = null;
         var stderrTail = new List<string>();
 
-        CommandResult exit;
         try
         {
-            exit = await Cli.Wrap(exePath)
+            var exit = await Cli.Wrap(exePath)
                 .WithArguments(args)
                 .WithStandardInputPipe(selection is null
                     ? PipeSource.Null
                     : PipeSource.FromString(selection, Encoding.UTF8))
                 .WithStandardOutputPipe(PipeTarget.ToDelegate(line =>
                 {
-                    var env = Parse(line);
-                    if (env is null) return;
-                    if (env.Value.Status is >= 200 and < 300)
-                        result ??= new Result(env.Value.Status, env.Value.Msg, env.Value.Data);
+                    if (ProtocolData.ReadResult(line) is not { } env) return;
+                    if (env.Status is >= 200 and < 300)
+                        result ??= env;
                     else
-                        progress?.Report(new Progress(env.Value.Msg));
+                        progress?.Report(new Progress(env.Msg));
                 }, Encoding.UTF8))
                 .WithStandardErrorPipe(PipeTarget.ToDelegate(line =>
                 {
@@ -249,18 +212,18 @@ public sealed class Backend(string exePath)
                 }, Encoding.UTF8))
                 .WithValidation(CommandResultValidation.None)
                 .ExecuteAsync(ct);
+
+            if (result is not null) return result;
+
+            var tail = string.Join("\n", stderrTail.TakeLast(5));
+            return new Result(500, "backend exited without a result (exit code " + exit.ExitCode + ")" +
+                                   (tail.Length > 0 ? "\n" + tail : ""), default);
         }
         catch (Exception ex)
         {
             // never fail silently: launch/pipe errors (e.g. AV blocking the exe) surface as a failed result
             return new Result(500, "backend launch failed: " + ex.Message, default);
         }
-
-        if (result is not null) return result;
-
-        var tail = string.Join("\n", stderrTail.TakeLast(5));
-        return new Result(500, "backend exited without a result (exit code " + exit.ExitCode + ")" +
-                               (tail.Length > 0 ? "\n" + tail : ""), default);
     }
 
     /// <summary>
@@ -275,7 +238,7 @@ public sealed class Backend(string exePath)
         await File.WriteAllTextAsync(sel, JsonSerializer.Serialize(new { keep = files }));
         try
         {
-            var psi = new ProcessStartInfo
+            using var process = Process.Start(new ProcessStartInfo
             {
                 FileName = "cmd.exe",
                 Verb = "runas",
@@ -283,16 +246,12 @@ public sealed class Backend(string exePath)
                 WindowStyle = ProcessWindowStyle.Hidden,
                 Arguments =
                     $"/c \"\"{exePath}\" --protocol {Protocol} --{action} --selection-file \"{sel}\" \"{root}\" > \"{res}\" 2>nul\""
-            };
-            using var process = Process.Start(psi);
+            });
             if (process is null) return null;
             await process.WaitForExitAsync();
 
             foreach (var line in File.Exists(res) ? File.ReadAllLines(res) : [])
-            {
-                var env = Parse(line);
-                if (env is { Status: >= 200 and < 300 } v) return new Result(v.Status, v.Msg, v.Data);
-            }
+                if (ProtocolData.ReadResult(line) is { Status: >= 200 and < 300 } result) return result;
 
             return null;
         }
@@ -306,34 +265,6 @@ public sealed class Backend(string exePath)
             try { File.Delete(res); } catch { /* best effort */ }
         }
     }
-
-    private static (int Status, string Msg, JsonElement Data)? Parse(string line)
-    {
-        JsonElement env;
-        try
-        {
-            using var doc = JsonDocument.Parse(line);
-            env = doc.RootElement.Clone();
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-
-        if (env.ValueKind != JsonValueKind.Object ||
-            !env.TryGetProperty("status", out var st) ||
-            st.ValueKind != JsonValueKind.Number ||
-            !st.TryGetInt32(out var status) ||
-            !env.TryGetProperty("msg", out var msgEl) ||
-            msgEl.ValueKind != JsonValueKind.String)
-            return null;
-
-        var data = env.TryGetProperty("data", out var dataEl) && dataEl.ValueKind == JsonValueKind.Object
-            ? dataEl.Clone()
-            : default;
-
-        return (status, msgEl.GetString() ?? "", data);
-    }
 }
 
 public static class ProtocolData
@@ -344,9 +275,34 @@ public static class ProtocolData
         NumberHandling = JsonNumberHandling.AllowReadingFromString
     };
 
+    internal static Result? ReadResult(string line)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(line);
+            var env = doc.RootElement;
+            if (env.ValueKind != JsonValueKind.Object ||
+                !env.TryGetProperty("status", out var statusEl) ||
+                statusEl.ValueKind != JsonValueKind.Number ||
+                !statusEl.TryGetInt32(out var status) ||
+                !env.TryGetProperty("msg", out var msgEl) ||
+                msgEl.ValueKind != JsonValueKind.String)
+                return null;
+
+            return new Result(status, msgEl.GetString() ?? "",
+                env.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object
+                    ? data.Clone()
+                    : default);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     public static List<InstallInfo> InstallsFrom(JsonElement data)
     {
-        return Field<List<InstallDto>>(data, "genshins")?
+        return Utils.Deserialize<List<InstallDto>>(data, Json, "genshins")?
             .Where(g => g.Root is not null)
             .Select(g => new InstallInfo(g.Root!))
             .ToList() ?? [];
@@ -354,12 +310,12 @@ public static class ProtocolData
 
     public static Failure[] FailedFrom(JsonElement data)
     {
-        return Field<Failure[]>(data, "failed") ?? [];
+        return Utils.Deserialize<Failure[]>(data, Json, "failed") ?? [];
     }
 
     public static List<RuleGroup> RuleGroups(JsonElement data)
     {
-        return Field<List<RuleDto>>(data, "rules")?
+        return Utils.Deserialize<List<RuleDto>>(data, Json, "rules")?
             .Select(r => new RuleGroup
             {
                 Id = r.Id ?? "",
@@ -375,42 +331,12 @@ public static class ProtocolData
 
     public static DeleteOutcome? DeleteFrom(JsonElement data)
     {
-        return data.ValueKind == JsonValueKind.Object ? Try(() => data.Deserialize<DeleteOutcome>(Json)) : null;
-    }
-
-    private static T? Field<T>(JsonElement data, string name) where T : class
-    {
-        return data.ValueKind == JsonValueKind.Object &&
-               data.TryGetProperty(name, out var el) &&
-               el.ValueKind == JsonValueKind.Array
-            ? Try(() => el.Deserialize<T>(Json))
-            : null;
-    }
-
-    private static T? Try<T>(Func<T?> read) where T : class
-    {
-        try
-        {
-            return read();
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+        return Utils.Deserialize<DeleteOutcome>(data, Json);
     }
 
     public static string FormatBytes(long bytes)
     {
-        string[] units = ["B", "KB", "MB", "GB", "TB"];
-        var i = 0;
-        double d = bytes;
-        while (d >= 1024 && i < units.Length - 1)
-        {
-            d /= 1024;
-            i++;
-        }
-
-        return $"{d:0.#} {units[i]}";
+        return Utils.FormatBytes(bytes);
     }
 
     private sealed record InstallDto(string? Root);
@@ -437,7 +363,7 @@ public sealed class RuleGroup : INotifyPropertyChanged
     public Visibility NoteVisibility => Note.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public string Summary => L.Format("rules.groupSummary", Files.Count,
-        ProtocolData.FormatBytes(Files.Sum(f => f.Size)));
+        Utils.FormatBytes(Files.Sum(f => f.Size)));
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -460,23 +386,18 @@ public sealed class FileItem : INotifyPropertyChanged
         {
             if (_selected == value) return;
             _selected = value;
-            OnPropertyChanged();
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Selected)));
         }
     }
 
-    public string SizeText => ProtocolData.FormatBytes(Size);
+    public string SizeText => Utils.FormatBytes(Size);
     public string TooltipText => L.Format("rules.fileTooltip", Path, SizeText, Size.ToString("N0"));
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     internal void RefreshTexts()
     {
-        OnPropertyChanged(nameof(TooltipText));
-    }
-
-    private void OnPropertyChanged([CallerMemberName] string? name = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TooltipText)));
     }
 }
 

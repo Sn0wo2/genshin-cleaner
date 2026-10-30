@@ -154,7 +154,7 @@
             <Button x:Name="EmptyButton"
                     HorizontalAlignment="Center"
                     Visibility="Collapsed"
-                    Click="OnEmptyActionClick" />
+                     Click="OnRefreshClick" />
         </StackPanel>
 
         <Grid x:Name="ReviewPanel" Grid.Row="2" RowSpacing="12" Visibility="Collapsed">

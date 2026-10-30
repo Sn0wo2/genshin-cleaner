@@ -8,8 +8,7 @@ namespace UI;
 
 public sealed partial class MainPage : Page
 {
-    private readonly Backend _backend;
-    private readonly string _exePath;
+    private readonly Backend _backend = new(Path.Combine(AppContext.BaseDirectory, "genshin-cleaner-backend.exe"));
     private readonly CleanerState _state = new();
     private string? _emptyActionKey;
 
@@ -19,9 +18,6 @@ public sealed partial class MainPage : Page
     {
         InitializeComponent();
         DataContext = Loc.Instance;
-
-        _exePath = Path.Combine(AppContext.BaseDirectory, "genshin-cleaner-backend.exe");
-        _backend = new Backend(_exePath);
 
         LanguageSelect.ItemsSource = L.Languages;
         LanguageSelect.SelectedValue = L.CurrentLocale;
@@ -50,9 +46,9 @@ public sealed partial class MainPage : Page
         try
         {
             if (_state.Busy) return;
-            if (!File.Exists(_exePath))
+            if (!File.Exists(Path.Combine(AppContext.BaseDirectory, "genshin-cleaner-backend.exe")))
             {
-                await ShowInfo(XamlRoot, L.Text("scan.backendMissingTitle"), L.Text("scan.backendMissingBody"));
+                await Utils.ShowInfo(XamlRoot, L.Text("scan.backendMissingTitle"), L.Text("scan.backendMissingBody"));
                 return;
             }
 
@@ -69,7 +65,7 @@ public sealed partial class MainPage : Page
             if (!result.Succeeded)
             {
                 if (_state.Installs.Count > 0) ShowEmpty("install.pick", null);
-                await ShowInfo(XamlRoot, L.Text("scan.failedTitle"), result.Msg);
+                await Utils.ShowInfo(XamlRoot, L.Text("scan.failedTitle"), result.Msg);
                 return;
             }
 
@@ -90,7 +86,7 @@ public sealed partial class MainPage : Page
         catch (Exception ex)
         {
             SetBusy(false);
-            await ShowInfo(XamlRoot, L.Text("scan.failedTitle"), ex.Message);
+            await Utils.ShowInfo(XamlRoot, L.Text("scan.failedTitle"), ex.Message);
         }
     }
 
@@ -111,11 +107,6 @@ public sealed partial class MainPage : Page
         _ = RefreshPreview();
     }
 
-    private void OnEmptyActionClick(object sender, RoutedEventArgs e)
-    {
-        _ = RefreshPreview();
-    }
-
     private async void OnActClick(object sender, RoutedEventArgs e)
     {
         try
@@ -126,7 +117,7 @@ public sealed partial class MainPage : Page
             var root = _state.Selected;
             var files = _state.SelectedFiles.Select(f => f.Path).ToList();
             var count = files.Count;
-            var bytes = ProtocolData.FormatBytes(_state.SelectedBytes);
+            var bytes = Utils.FormatBytes(_state.SelectedBytes);
 
             var confirm = new ContentDialog
             {
@@ -170,7 +161,16 @@ public sealed partial class MainPage : Page
             var result = await _backend.Act(action, root, files, new Progress<Progress>(p => BusyMsg.Text = p.Msg));
             SetBusy(false);
 
-            if (result.Partial && await ConfirmElevate(action, ProtocolData.DeleteFrom(result.Data)?.Failed.Length ?? 0))
+            if (result.Partial && await new ContentDialog
+                {
+                    Title = L.Text(action + ".elevateTitle"),
+                    Content = L.Format(action + ".elevateBody",
+                        ProtocolData.DeleteFrom(result.Data)?.Failed.Length ?? 0),
+                    PrimaryButtonText = L.Text(action + ".elevatePrimary"),
+                    CloseButtonText = L.Text("dialog.cancel"),
+                    DefaultButton = ContentDialogButton.Primary,
+                    XamlRoot = XamlRoot
+                }.ShowAsync() == ContentDialogResult.Primary)
             {
                 SetBusy(true, action + ".progress");
                 var elevated = await _backend.ElevatedAct(action, root, files);
@@ -178,28 +178,28 @@ public sealed partial class MainPage : Page
                 if (elevated is not null) result = elevated;
             }
 
-            var outcome = ProtocolData.DeleteFrom(result.Data);
             if (result.Succeeded)
             {
+                var outcome = ProtocolData.DeleteFrom(result.Data);
                 var failed = outcome?.Failed ?? [];
                 if (result.Partial)
-                    await ShowInfo(XamlRoot, L.Text(action + ".partialTitle"),
-                        result.Msg + FormatFailed(failed));
+                    await Utils.ShowInfo(XamlRoot, L.Text(action + ".partialTitle"),
+                        result.Msg + Utils.FormatFailures(failed,
+                            f => f.Path is null ? f.Reason : f.Path + ": " + f.Reason));
                 else
-                    await ShowInfo(XamlRoot, L.Text(action + ".doneTitle"),
+                    await Utils.ShowInfo(XamlRoot, L.Text(action + ".doneTitle"),
                         L.Format(action + ".doneBody", outcome?.DoneItems ?? 0, count,
-                            ProtocolData.FormatBytes(outcome?.FreedBytes ?? 0), bytes));
+                            Utils.FormatBytes(outcome?.FreedBytes ?? 0), bytes));
 
-                var failedPaths = failed.Where(f => f.Path is not null).Select(f => f.Path!)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var completedPaths = files.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                completedPaths.ExceptWith(failed.Where(f => f.Path is not null).Select(f => f.Path!));
                 _state.Rules = _state.Rules
                     .Select(g => new RuleGroup
                     {
                         Id = g.Id,
                         Params = g.Params,
                         Files = g.Files
-                            .Where(f => !files.Contains(f.Path, StringComparer.OrdinalIgnoreCase) ||
-                                        failedPaths.Contains(f.Path))
+                            .Where(f => !completedPaths.Contains(f.Path))
                             .ToList()
                     })
                     .Where(g => g.Files.Count > 0)
@@ -211,13 +211,13 @@ public sealed partial class MainPage : Page
             }
             else
             {
-                await ShowInfo(XamlRoot, L.Text(action + ".failedTitle"), result.Msg);
+                await Utils.ShowInfo(XamlRoot, L.Text(action + ".failedTitle"), result.Msg);
             }
         }
         catch (Exception ex)
         {
             SetBusy(false);
-            await ShowInfo(XamlRoot, L.Text("error.title"), ex.Message);
+            await Utils.ShowInfo(XamlRoot, L.Text("error.title"), ex.Message);
         }
     }
 
@@ -230,7 +230,7 @@ public sealed partial class MainPage : Page
         catch (Exception ex)
         {
             SetBusy(false);
-            await ShowInfo(XamlRoot, L.Text("scan.failedTitle"), ex.Message);
+            await Utils.ShowInfo(XamlRoot, L.Text("scan.failedTitle"), ex.Message);
         }
     }
 
@@ -251,15 +251,16 @@ public sealed partial class MainPage : Page
 
             if (!result.Succeeded)
             {
-                await ShowInfo(XamlRoot, L.Text("scan.failedTitle"), result.Msg);
+                await Utils.ShowInfo(XamlRoot, L.Text("scan.failedTitle"), result.Msg);
                 return;
             }
 
             var found = ProtocolData.InstallsFrom(result.Data);
             if (found.Count == 0)
             {
-                await ShowInfo(XamlRoot, L.Text("scan.failedTitle"),
-                    L.Text("scan.noneBody") + FormatFailed(ProtocolData.FailedFrom(result.Data)));
+                await Utils.ShowInfo(XamlRoot, L.Text("scan.failedTitle"),
+                    L.Text("scan.noneBody") + Utils.FormatFailures(ProtocolData.FailedFrom(result.Data),
+                        f => f.Path is null ? f.Reason : f.Path + ": " + f.Reason));
                 return;
             }
 
@@ -275,30 +276,8 @@ public sealed partial class MainPage : Page
         catch (Exception ex)
         {
             SetBusy(false);
-            await ShowInfo(XamlRoot, L.Text("scan.failedTitle"), ex.Message);
+            await Utils.ShowInfo(XamlRoot, L.Text("scan.failedTitle"), ex.Message);
         }
-    }
-
-    private async Task<bool> ConfirmElevate(string action, int failedCount)
-    {
-        var dialog = new ContentDialog
-        {
-            Title = L.Text(action + ".elevateTitle"),
-            Content = L.Format(action + ".elevateBody", failedCount),
-            PrimaryButtonText = L.Text(action + ".elevatePrimary"),
-            CloseButtonText = L.Text("dialog.cancel"),
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = XamlRoot
-        };
-        return await dialog.ShowAsync() == ContentDialogResult.Primary;
-    }
-
-    private static string FormatFailed(ProtocolData.Failure[] failed)
-    {
-        if (failed.Length == 0) return "";
-        var lines = failed.Take(5).Select(f => f.Path is null ? f.Reason : f.Path + ": " + f.Reason).ToList();
-        if (failed.Length > lines.Count) lines.Add("…");
-        return "\n" + string.Join("\n", lines);
     }
 
     private void OnGameSelected(object sender, SelectionChangedEventArgs e)
@@ -351,14 +330,16 @@ public sealed partial class MainPage : Page
 
     private void SetState()
     {
-        var busy = _state.Busy;
-        var hasRules = _state.Rules.Count > 0;
-        StartPanel.Visibility = ToVis(!busy && _state.Installs.Count == 0);
-        InstallPanel.Visibility = ToVis(_state.Installs.Count > 0);
-        BusyPanel.Visibility = ToVis(busy);
-        ReviewPanel.Visibility = ToVis(!busy && hasRules);
+        StartPanel.Visibility = !_state.Busy && _state.Installs.Count == 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        InstallPanel.Visibility = _state.Installs.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        BusyPanel.Visibility = _state.Busy ? Visibility.Visible : Visibility.Collapsed;
+        ReviewPanel.Visibility = !_state.Busy && _state.Rules.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         BackButton.Visibility = ReviewPanel.Visibility;
-        EmptyPanel.Visibility = ToVis(!busy && _state.Installs.Count > 0 && !hasRules);
+        EmptyPanel.Visibility = !_state.Busy && _state.Installs.Count > 0 && _state.Rules.Count == 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     private void ShowEmpty(string msgKey, string? actionKey)
@@ -377,21 +358,9 @@ public sealed partial class MainPage : Page
             ? ""
             : L.Format("rules.selectionSummary",
                 _state.SelectedCount, total,
-                ProtocolData.FormatBytes(_state.SelectedBytes),
-                ProtocolData.FormatBytes(_state.Rules.Sum(r => r.Files.Sum(f => f.Size))));
+                Utils.FormatBytes(_state.SelectedBytes),
+                Utils.FormatBytes(_state.Rules.Sum(r => r.Files.Sum(f => f.Size))));
         DeleteButton.IsEnabled = StubButton.IsEnabled = UnstubButton.IsEnabled =
             _state is { Busy: false, HasSelection: true };
-    }
-
-    private static Visibility ToVis(bool visible)
-    {
-        return visible ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private static Task ShowInfo(XamlRoot root, string title, string msg)
-    {
-        return new ContentDialog
-                { Title = title, Content = msg, CloseButtonText = L.Text("dialog.ok"), XamlRoot = root }
-            .ShowAsync().AsTask();
     }
 }

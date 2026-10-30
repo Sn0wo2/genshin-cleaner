@@ -30,7 +30,7 @@ public sealed class MainWindow : Window
 
         Grid.SetRow(titleBar, 0);
         Grid.SetRow(page, 1);
-        var root = new Grid
+        Content = new Grid
         {
             RowDefinitions =
             {
@@ -39,8 +39,6 @@ public sealed class MainWindow : Window
             },
             Children = { titleBar, page }
         };
-
-        Content = root;
 
         AppWindow.Resize(new SizeInt32(1280, 920));
     }
