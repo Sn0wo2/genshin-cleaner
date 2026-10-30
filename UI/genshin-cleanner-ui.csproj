@@ -20,6 +20,7 @@
         <WinUISDKReferences>false</WinUISDKReferences>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <BackendVersion Condition="'$(BackendVersion)' == ''">0.0.0</BackendVersion>
     </PropertyGroup>
 
     <ItemGroup>
@@ -48,8 +49,8 @@
         <Exec Command="go tool rsrc -arch amd64 -manifest backend.manifest -o rsrc_windows_amd64.syso" WorkingDirectory=".."/>
     </Target>
 
-    <Target Name="BuildGoBackend" BeforeTargets="BeforeBuild" Condition="'$(DesignTimeBuild)' != 'true' AND '$(DotNetBuildPass)' == ''" Inputs="..\**\*.go;..\go.mod;..\go.sum;..\rsrc_windows_amd64.syso" Outputs="$(OutDir)genshin-cleaner-backend.exe">
-        <Exec Command="go build -trimpath -ldflags &quot;-s -w&quot; -o &quot;$(OutDir)genshin-cleaner-backend.exe&quot; .."/>
+    <Target Name="BuildGoBackend" BeforeTargets="BeforeBuild" Condition="'$(DesignTimeBuild)' != 'true' AND '$(DotNetBuildPass)' == ''">
+        <Exec Command="go build -mod=readonly -trimpath -ldflags &quot;-s -w -X github.com/Sn0wo2/genshin-cleaner/stdjson.buildVersion=$(BackendVersion)&quot; -o &quot;$(OutDir)genshin-cleaner-backend.exe&quot; .."/>
     </Target>
 
     <Target Name="IncludeBackendInPublish" AfterTargets="ComputeFilesToPublish">

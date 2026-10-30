@@ -26,6 +26,8 @@ const (
 
 const Version = "0.0.0"
 
+var buildVersion = Version
+
 const Protocol = 1
 
 const (
@@ -123,23 +125,30 @@ type Target struct {
 }
 
 func NewListData(genshins []genshin.Genshin, failed error) ListData {
-	return ListData{Data{V: Protocol, Version: Version, Stage: StageList}, genshins, newErrorList(failed)}
+	data := ListData{Data{V: Protocol, Version: buildVersion, Stage: StageList}, genshins, nil}
+	if failed != nil {
+		data.Failed = &ErrorList{Err: failed}
+	}
+
+	return data
 }
 
 func NewDryRunData(g genshin.Genshin, stage string, totalItems int, totalBytes int64, rules []Rule, failed error) DryRunData {
-	return DryRunData{Data{V: Protocol, Version: Version, Stage: stage}, g, totalItems, totalBytes, rules, newErrorList(failed)}
+	data := DryRunData{Data{V: Protocol, Version: buildVersion, Stage: stage}, g, totalItems, totalBytes, rules, nil}
+	if failed != nil {
+		data.Failed = &ErrorList{Err: failed}
+	}
+
+	return data
 }
 
 func NewDeleteData(g genshin.Genshin, stage string, totalItems int, totalBytes int64, doneItems int, freedBytes int64, failed error) DeleteData {
-	return DeleteData{Data{V: Protocol, Version: Version, Stage: stage}, g, totalItems, totalBytes, doneItems, freedBytes, newErrorList(failed)}
-}
-
-func newErrorList(err error) *ErrorList {
-	if err == nil {
-		return nil
+	data := DeleteData{Data{V: Protocol, Version: buildVersion, Stage: stage}, g, totalItems, totalBytes, doneItems, freedBytes, nil}
+	if failed != nil {
+		data.Failed = &ErrorList{Err: failed}
 	}
 
-	return &ErrorList{Err: err}
+	return data
 }
 
 var (
@@ -181,9 +190,9 @@ func Init(debugging bool) {
 	})
 }
 
-func NoData() Data { return Data{V: Protocol, Version: Version} }
+func NoData() Data { return Data{V: Protocol, Version: buildVersion} }
 
-func StageData(stage string) Data { return Data{V: Protocol, Version: Version, Stage: stage} }
+func StageData(stage string) Data { return Data{V: Protocol, Version: buildVersion, Stage: stage} }
 
 func Log[T any](s Status, msg string, data T) {
 	if s == StatusLogDebug && !debug {
